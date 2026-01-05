@@ -1,53 +1,59 @@
 import numpy as np
 from abc import ABC, abstractmethod
-'''The scene owns references and intent
-The renderer owns GPU buffers
-The simulation writes directly to those buffers'''
-class SceneObject:
+from render_types import ProgramID, Mode
 
-    def __init__(self, visibility: bool = False):
-        self.vbo = None
-        self.vao = None
+
+
+class SceneObject:
+    def __init__(self, 
+                 Mode: Mode, 
+                 visibility:bool = True, 
+                 dynamic: bool = False,
+                 ProgramID: ProgramID = ProgramID.BASIC_3D):
+        self.visibility = visibility
+        self.dynamic = dynamic
+        self.ProgramID = ProgramID
+        self.Mode = Mode
 
 class Scene:
     def __init__(self):
         self.objects: list[SceneObject] = []
 
     def add(self, obj: SceneObject):
-        if obj.name in self.objects:
-            raise ValueError(f"SceneObject '{obj.name}' already exists")
-        self.objects[obj.name] = obj
+        if obj in self.objects:
+            raise ValueError(f"SceneObject already exists")
+        self.objects.append(obj)
 
     def remove(self, obj: SceneObject):
-        if obj.name not in self.objects:
-            raise ValueError(f"SceneObject '{obj.name}' doesn't exist")
-        del self.objects[obj.name]
-
-
-
-class Curve(SceneObject):
-    def __init__(self):
-        pass
+        if obj not in self.objects:
+            raise ValueError(f"SceneObject doesn't exist")
+        self.objects.remove(obj)
 
 class Axes(SceneObject):
-    def __init__(
-        self,
-        axis_length: float = 10.0,
-        tick_interval: float = 1.0,
-        visible: bool = True
-    ):
-        super().__init__(visibility=visible)
+    def __init__(self, length: float = 10.0):
+        super().__init__(Mode=Mode.LINES)
+        self.length = length
+        # Each line is two points with RGB color
+        self.vertices = np.array([
+            # X axis (red)
+            -length, 0, 0, 1, 0, 0,
+             length, 0, 0, 1, 0, 0,
+            # Y axis (green)
+            0, -length, 0, 0, 1, 0,
+            0,  length, 0, 0, 1, 0,
+            # Z axis (blue)
+            0, 0, -length, 0, 0, 1,
+            0, 0,  length, 0, 0, 1,
+        ], dtype=np.float32)
 
-        self.axis_length = axis_length
-        self.tick_interval = tick_interval
+        self.mode = Mode.LINES
+        self.dynamic = False
+        self.program_id = ProgramID.BASIC_3D
 
-        self.show_ticks = True
-        self.show_labels = False   # future
-        self.color_xyz = (
-            (1.0, 0.0, 0.0),  # X
-            (0.0, 1.0, 0.0),  # Y
-            (0.0, 0.0, 1.0),  # Z
-        )
+if __name__ == '__main__':
+    scene = Scene()
+    axes = Axes(length=10.0)
+    scene.add(axes)
 
-class ParticleSim(SceneObject):
-    pass
+    print(scene.objects)
+    print(axes.vertices)
