@@ -1,4 +1,4 @@
-from render_space import RenderSpace, glfw_init
+from render_space_glfw import RenderSpace, glfw_init
 from scene import Scene, Axes
 from renderer import Renderer
 import glfw

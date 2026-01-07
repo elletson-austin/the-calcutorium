@@ -1,5 +1,5 @@
 import moderngl
-from render_space import *
+from render_space_glfw import *
 from scene import *
 from render_types import ProgramID, Mode
 '''it owns:
