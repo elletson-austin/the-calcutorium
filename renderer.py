@@ -2,23 +2,14 @@ import moderngl
 from camera import Camera
 from scene import SceneObject
 from render_types import ProgramID, Mode
-'''it owns:
-Context (borrowed, not created)
-Program
-Buffer (VBO)
-VertexArray (VAO)
 
-It does not own:
-Scene logic
-Simulation state
-Camera movement logic'''
 
 class ProgramManager: # holds and stores programs that draw points, lines, etc.
 
     def __init__(self, ctx: moderngl.Context):
         self.programs: dict[ProgramID, moderngl.Program] = {}
         self.ctx = ctx
-        # self.programs[ProgramID.BASIC_3D] = self.basic_3d_src()
+
     
     def basic_3d_src(self):
         VERTEX_SOURCE = """
@@ -51,6 +42,7 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         """
         return VERTEX_SOURCE, FRAGMENT_SOURCE
     
+
     def build_program(self, program_id) -> moderngl.Program: # think of as the material 
         if program_id in self.programs:
             return self.programs[program_id]
@@ -69,6 +61,7 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         return program
     
 class RenderObject:
+
     def __init__(self,
         program_id: ProgramID,
         vao: moderngl.VertexArray,
@@ -85,6 +78,7 @@ class RenderObject:
         self.vao = vao
         self.vbo = vbo
 
+
     def release(self):
         self.vao.release()
         self.vbo.release()
@@ -95,6 +89,7 @@ class Renderer:
         self.ctx = ctx
         self.program_manager = ProgramManager(self.ctx)
     
+
     def create_render_object(self, obj: SceneObject) -> RenderObject:
         program = self.program_manager.build_program(obj.program_id)
         vbo = self.ctx.buffer(obj.vertices.tobytes())
@@ -112,11 +107,10 @@ class Renderer:
         )
         return render_object
     
-    def render(self, render_objects: list, cam: Camera, width: int, height: int):
-        """
-        Renders a list of RenderObjects.
-        Each object uses its own VAO and program.
-        """
+
+    def render(self, render_objects: list, cam: Camera, width: int, height: int) -> list[RenderObject]:
+
+        # Each object uses its own VAO and program. TODO render objects based off of common program
         for ro in render_objects:
             # The VAO already knows which program to use. We just need to set the uniforms.
             program = ro.vao.program

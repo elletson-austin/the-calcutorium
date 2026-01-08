@@ -12,6 +12,21 @@ class SnapMode(Enum):
     XZ = auto()
     YZ = auto()
 
+
+@dataclass
+class InputState: # Tracks the state of the input
+    mouse_pos: np.ndarray = field(
+        default_factory=lambda: np.array([0, 0], dtype=np.float32)
+    )
+    mouse_delta: np.ndarray = field(
+        default_factory=lambda: np.array([0, 0], dtype=np.float32)
+    )
+    keys_held: set = field(default_factory=set)
+    left_mouse_pressed: bool = False
+    right_mouse_pressed: bool = False
+    scroll_delta: float = 0.0
+
+
 class Camera: # TODO It would make sense to have two different camera objects between 2d and 3d visualization.
     
     def __init__(self, 
@@ -33,17 +48,19 @@ class Camera: # TODO It would make sense to have two different camera objects be
         self.distance = distance
         self.projection = Projection.Orthographic
         self.snap_mode = SnapMode.XY
-    # Returns the current position of the camera [x, y, z]
-    def get_position(self) -> np.ndarray: # Calculate the camera position based on the orientation, distance and center
+
+    # Calculate the camera position based on the orientation, distance and center
+    def get_position(self) -> np.ndarray: 
         
         pitch = np.radians(self.rotation[0])
-        yaw = np.radians(self.rotation[1])   
+        yaw = np.radians(self.rotation[1])
 
         x = self.distance * np.cos(pitch) * np.sin(yaw)
         y = self.distance * np.sin(pitch)
         z = self.distance * np.cos(pitch) * np.cos(yaw)
 
         return self.position_center + np.array([x, y, z], dtype=np.float32)
+
 
     def get_view_matrix(self) -> np.ndarray:
         cam_pos = self.get_position()
@@ -73,6 +90,8 @@ class Camera: # TODO It would make sense to have two different camera objects be
         # Bottom row should be [0, 0, 0, 1] - already set by np.eye()
         
         return view.T.flatten()
+    
+
     def _perspective_matrix(self, width, height) -> np.ndarray: 
         aspect_ratio = width / height
         fov_rad = np.radians(self.fov)  # Field of view in radians
@@ -89,6 +108,7 @@ class Camera: # TODO It would make sense to have two different camera objects be
         
         return proj.T.flatten()
         
+
     def _orthographic_matrix(self, width, height):
 
         scale = self.distance * 0.1
@@ -110,22 +130,10 @@ class Camera: # TODO It would make sense to have two different camera objects be
 
         return proj.T.flatten()
     
+
     def get_projection_matrix(self, width, height):
         
         if self.projection == Projection.Perspective:
             return self._perspective_matrix(width, height)
         else:
             return self._orthographic_matrix(width, height)
-
-@dataclass
-class InputState: # Tracks the state of the input
-    mouse_pos: np.ndarray = field(
-        default_factory=lambda: np.array([0, 0], dtype=np.float32)
-    )
-    mouse_delta: np.ndarray = field(
-        default_factory=lambda: np.array([0, 0], dtype=np.float32)
-    )
-    keys_held: set = field(default_factory=set)
-    left_mouse_pressed: bool = False
-    right_mouse_pressed: bool = False
-    scroll_delta: float = 0.0

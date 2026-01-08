@@ -7,6 +7,7 @@ from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
 from renderer import Renderer
 from camera import Camera, InputState, Projection
 
+
 class PySideRenderSpace(QOpenGLWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,17 +24,21 @@ class PySideRenderSpace(QOpenGLWidget):
         self.timer.timeout.connect(self.update)
         self.timer.start(16)
 
+
     def set_scene(self, scene):
         self.scene = scene
+
 
     def initializeGL(self):
         self.ctx = None
         self.update()
 
+
     def resizeGL(self, w: int, h: int):
         if self.ctx:
             self.ctx.viewport = (0, 0, w, h)
-    
+
+
     def paintGL(self):
         self.makeCurrent()
         if self.ctx is None:
@@ -71,6 +76,7 @@ class PySideRenderSpace(QOpenGLWidget):
         for ro in render_objects:
             ro.release()
 
+
     def update_camera(self, dt: float = 0.016): # dt is roughly 1/60th of a second
         """Updates the camera's position and orientation based on user input."""
         keys = self.input_state.keys_held
@@ -88,7 +94,6 @@ class PySideRenderSpace(QOpenGLWidget):
             self.cam.distance = np.clip(self.cam.distance, 1.0, 300.0)
 
         # --- Keyboard Movement (WASD) ---
-        # Note: We now use Qt.Key enums instead of glfw.KEY_*
         if Qt.Key.Key_W in keys:
             # Move camera center forward
             forward = self.cam.position_center - self.cam.get_position()

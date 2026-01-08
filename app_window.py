@@ -30,10 +30,3 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(0, 0, 0, 0) # Remove margins around the render space
         layout.addWidget(self.render_widget)
-
-# If this file is run directly (for testing MainWindow), uncomment this:
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
