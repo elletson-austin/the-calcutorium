@@ -1,6 +1,6 @@
 import moderngl
-from render_space_glfw import *
-from scene import *
+from camera import Camera
+from scene import SceneObject
 from render_types import ProgramID, Mode
 '''it owns:
 Context (borrowed, not created)
@@ -13,22 +13,12 @@ Scene logic
 Simulation state
 Camera movement logic'''
 
-'''class Mode(Enum): # Moderngl draw modes
-    POINTS = auto()
-    LINES = auto()
-    LINE_STRIP = auto()
-    TRIANGLES = auto()
-    LINE_LOOP = auto()
-
-class ProgramID(Enum): # supported shader programs
-    BASIC_3D = auto()'''
-
 class ProgramManager: # holds and stores programs that draw points, lines, etc.
 
     def __init__(self, ctx: moderngl.Context):
         self.programs: dict[ProgramID, moderngl.Program] = {}
         self.ctx = ctx
-        self.programs[ProgramID.BASIC_3D] = self.basic_3d_src()
+        # self.programs[ProgramID.BASIC_3D] = self.basic_3d_src()
     
     def basic_3d_src(self):
         VERTEX_SOURCE = """
@@ -62,11 +52,15 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         return VERTEX_SOURCE, FRAGMENT_SOURCE
     
     def build_program(self, program_id) -> moderngl.Program: # think of as the material 
+        if program_id in self.programs:
+            return self.programs[program_id]
+
         if program_id == ProgramID.BASIC_3D:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.basic_3d_src()
         else:
             print('no valid shader source code available') 
             return 
+        
         program = self.ctx.program(
             vertex_shader=VERTEX_SOURCE, 
             fragment_shader=FRAGMENT_SOURCE) 
@@ -79,13 +73,13 @@ class RenderObject:
         program_id: ProgramID,
         vao: moderngl.VertexArray,
         vbo: moderngl.Buffer,
-        num_vertexes: int,
+        # num_vertexes: int, # This is implicitly stored in the vao
         mode: Mode,
         dynamic: bool = False,
         ) -> None:
         
         self.program_id = program_id
-        self.num_vertexes = num_vertexes
+        # self.num_vertexes = num_vertexes
         self.mode = mode
         self.dynamic = dynamic
         self.vao = vao
@@ -97,12 +91,9 @@ class RenderObject:
 
 class Renderer:
     
-    def __init__(self, scene: Scene,render_space: RenderSpace):
-
-        self.ctx = render_space.ctx
+    def __init__(self, ctx: moderngl.Context):
+        self.ctx = ctx
         self.program_manager = ProgramManager(self.ctx)
-        self.scene = scene
-        self.objects_to_render = list[RenderObject]
     
     def create_render_object(self, obj: SceneObject) -> RenderObject:
         program = self.program_manager.build_program(obj.program_id)
@@ -115,24 +106,20 @@ class Renderer:
             program_id=obj.program_id,
             vao=vao,
             vbo=vbo,
-            num_vertexes=len(obj.vertices)//6,
+            # num_vertexes=len(obj.vertices)//6,
             mode=obj.mode,
             dynamic=obj.dynamic
         )
         return render_object
     
-    def render(self, cam: Camera, width: int, height: int):
+    def render(self, render_objects: list, cam: Camera, width: int, height: int):
         """
-        Renders all RenderObjects in the scene.
+        Renders a list of RenderObjects.
         Each object uses its own VAO and program.
         """
-        for ro in self.objects_to_render:
-            # Get the program associated with this object
-            program = self.program_manager.programs.get(ro.program_id)
-            if not program:
-                continue  # skip objects with no valid program
-
-            # Write camera uniforms
+        for ro in render_objects:
+            # The VAO already knows which program to use. We just need to set the uniforms.
+            program = ro.vao.program
             program["u_view"].write(cam.get_view_matrix())
             program["u_proj"].write(cam.get_projection_matrix(width, height))
 
@@ -151,4 +138,4 @@ class Renderer:
                 m = moderngl.POINTS  # fallback
 
             # Render the object
-            ro.vao.render(mode=m, vertices=ro.num_vertexes)
+            ro.vao.render(mode=m)
