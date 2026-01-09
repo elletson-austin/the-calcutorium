@@ -28,5 +28,5 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(0, 0, 0, 0) # Remove margins around the render space
+        layout.setContentsMargins(10, 10, 10, 10) # Remove margins around the render space
         layout.addWidget(self.render_widget)

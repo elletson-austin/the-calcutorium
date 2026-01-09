@@ -15,7 +15,8 @@ class PySideRenderSpace(QOpenGLWidget):
         self.input_state: InputState = InputState()
         self.ctx: moderngl.Context = None
         self.scene = None
-        self.screen = None # Add screen attribute
+        self.screen = None
+        self.renderer: Renderer = None
 
         # Set a strong focus policy to receive keyboard events.
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -30,32 +31,30 @@ class PySideRenderSpace(QOpenGLWidget):
 
 
     def initializeGL(self):
-        self.ctx = None
-        self.update()
+        self.makeCurrent()
+        self.ctx = moderngl.create_context()
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        self.ctx.enable(moderngl.PROGRAM_POINT_SIZE)
+        self.renderer = Renderer(self.ctx)
+        self.screen = self.ctx.detect_framebuffer()
 
 
     def resizeGL(self, w: int, h: int):
         if self.ctx:
             self.ctx.viewport = (0, 0, w, h)
+            self.screen = self.ctx.detect_framebuffer()
 
 
     def paintGL(self):
         self.makeCurrent()
-        if self.ctx is None:
-            self.ctx = moderngl.create_context()
-            self.ctx.enable(moderngl.DEPTH_TEST)
-            self.ctx.enable(moderngl.PROGRAM_POINT_SIZE)
-            self.renderer = Renderer(self.ctx)
-            self.screen = self.ctx.detect_framebuffer() # Explicitly detect framebuffer
-
         if not self.ctx or not self.scene or not self.renderer or not self.screen:
             return
 
-        self.screen.use() # Ensure we are drawing to the widget's framebuffer
+        self.screen.use()
         self.update_camera()
 
         # Clear the screen with a dark color
-        self.screen.clear(0.0, 0.2, 0.2, 1.0) # Use self.screen.clear
+        self.screen.clear(0.0, 0.2, 0.2, 1.0)
         
         width, height = self.width(), self.height()
         if width == 0 or height == 0:
@@ -163,7 +162,6 @@ class PySideRenderSpace(QOpenGLWidget):
         """Handle mouse wheel scroll events for zooming."""
         # PySide6's angleDelta().y() is usually in 1/8ths of a degree, so 120 is a standard wheel click
         self.input_state.scroll_delta = event.angleDelta().y() / 120.0
-        print('wheel scrolled')
 
 
     def keyPressEvent(self, event: QKeyEvent):

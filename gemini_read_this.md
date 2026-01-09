@@ -35,5 +35,3 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   This separation of concerns allows for rapid prototyping. Adding new features primarily involves
   adding a UI element to the MainWindow and writing a corresponding method to modify the Scene,
   without needing to touch the complex rendering code in the View.
-
-  the issue of 1/8/2025 the screen turns red once there is a resize of the window FBO ID 0 Problem

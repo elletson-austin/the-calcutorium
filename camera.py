@@ -93,7 +93,10 @@ class Camera: # TODO It would make sense to have two different camera objects be
     
 
     def _perspective_matrix(self, width, height) -> np.ndarray: 
-        aspect_ratio = width / height
+        if height == 0:
+            aspect_ratio = 1.0
+        else:
+            aspect_ratio = width / height
         fov_rad = np.radians(self.fov)  # Field of view in radians
         near = 1.0     # Near clipping plane (minimum render distance)
         far = 500.0    # Far clipping plane (maximum render distance)
@@ -110,13 +113,17 @@ class Camera: # TODO It would make sense to have two different camera objects be
         
 
     def _orthographic_matrix(self, width, height):
+        if height == 0:
+            aspect = 1.0
+        else:
+            aspect = width / height
+        
+        view_height = self.distance
+        top = view_height / 2.0
+        bottom = -view_height / 2.0
+        right = top * aspect
+        left = -top * aspect
 
-        scale = self.distance * 0.1
-        aspect = width / height
-        left   = -scale * aspect
-        right  =  scale * aspect
-        bottom = -scale
-        top    =  scale
         near   = -1000.0
         far    =  1000.0
 
