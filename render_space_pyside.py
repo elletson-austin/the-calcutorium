@@ -17,9 +17,12 @@ class PySideRenderSpace(QOpenGLWidget):
         self.scene = None
         self.screen = None
         self.renderer: Renderer = None
+        self.mouse_hovering: bool = False # Track mouse hover state
 
         # Set a strong focus policy to receive keyboard events.
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # Enable mouse tracking to receive enter/leave events
+        self.setMouseTracking(True)
         # Timer to trigger continuous updates for a smooth render loop
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
@@ -84,7 +87,7 @@ class PySideRenderSpace(QOpenGLWidget):
         if self.input_state.left_mouse_pressed:
             self.cam.rotation[0] += self.input_state.mouse_delta[1] * 2.0 # Pitch
             self.cam.rotation[1] += self.input_state.mouse_delta[0] * 2.0 # Yaw
-            self.cam.rotation[0] = np.clip(self.cam.rotation[0], -90.0, 90.0) # Clamp pitch
+            self.cam.rotation[0] = np.clip(self.cam.rotation[0], -89.0, 89.0) # Clamp pitch
             self.cam.rotation[1] = self.cam.rotation[1] % 360.0 # Wrap yaw
 
         # --- Mouse Zoom ---
@@ -164,16 +167,28 @@ class PySideRenderSpace(QOpenGLWidget):
         self.input_state.scroll_delta = event.angleDelta().y() / 120.0
 
 
+    def enterEvent(self, event):
+        """Handle mouse entering the widget."""
+        self.mouse_hovering = True
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """Handle mouse leaving the widget."""
+        self.mouse_hovering = False
+        super().leaveEvent(event)
+
+
     def keyPressEvent(self, event: QKeyEvent):
         """Handle key press events."""
         self.input_state.keys_held.add(event.key())
         
-        # Toggle projection mode with Tab key
-        if event.key() == Qt.Key.Key_Tab:
+        # Toggle projection mode with Tab key only if mouse is hovering
+        if event.key() == Qt.Key.Key_Tab and self.mouse_hovering:
             if self.cam.projection == Projection.Orthographic:
                 self.cam.projection = Projection.Perspective
             else:
                 self.cam.projection = Projection.Orthographic
+        super().keyPressEvent(event)
 
 
     def keyReleaseEvent(self, event: QKeyEvent):

@@ -42,7 +42,7 @@ class Camera: # TODO It would make sense to have two different camera objects be
         if rotation is not None:
             self.rotation = rotation
         else:
-            self.rotation = np.array([90.0, 0.0, 0.0], dtype=np.float32)
+            self.rotation = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 
         self.fov = fov
         self.distance = distance
