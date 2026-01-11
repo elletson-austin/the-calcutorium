@@ -26,7 +26,7 @@ class PySideRenderSpace(QOpenGLWidget):
         # Timer to trigger continuous updates for a smooth render loop
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
-        self.timer.start(5)
+        self.timer.start(16) # Approximately 60 FPS
         self.render_objects: dict = {}  # Map SceneObjects to their RenderObjects
 
 

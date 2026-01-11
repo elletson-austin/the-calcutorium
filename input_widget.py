@@ -1,8 +1,10 @@
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QLineEdit
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 class InputWidget(QFrame):
+    command_entered = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(300, 200)
@@ -10,7 +12,7 @@ class InputWidget(QFrame):
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
         layout = QVBoxLayout(self)
-        
+
         self.command_input = QLineEdit()
         self.command_input.setPlaceholderText("Enter a command...")
         self.command_input.returnPressed.connect(self.on_command)
@@ -21,17 +23,13 @@ class InputWidget(QFrame):
             border: 1px solid #555555;
             padding: 5px;
         """)
-        
+
         layout.addWidget(self.command_input)
         layout.addStretch(1) # Pushes the input to the top
 
     def on_command(self):
         command = self.command_input.text()
-        if command =='':
-            print("no command entered")
-            return
-        if command =='snap xy':
-            pass
-        print(f"Command entered: {command}")
-
         self.command_input.clear()
+        if command:
+            self.command_entered.emit(command)
+
