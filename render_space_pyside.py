@@ -26,7 +26,8 @@ class PySideRenderSpace(QOpenGLWidget):
         # Timer to trigger continuous updates for a smooth render loop
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
-        self.timer.start(16)
+        self.timer.start(5)
+        self.render_objects: dict = {}  # Map SceneObjects to their RenderObjects
 
 
     def set_scene(self, scene):
@@ -63,20 +64,21 @@ class PySideRenderSpace(QOpenGLWidget):
         if width == 0 or height == 0:
             return
 
-        # NOTE: This part is simple but inefficient. We are creating new GPU buffers
-        # every single frame. This is fine for a simple scene, but we will
-        # optimize this later by caching the render objects.
-        render_objects = []
+        # Create render objects for any new scene objects
         for obj in self.scene.objects:
-            ro = self.renderer.create_render_object(obj)
-            render_objects.append(ro)
+            if obj not in self.render_objects:
+                self.render_objects[obj] = self.renderer.create_render_object(obj)
+
+        # TODO: Handle object removal from the scene
 
         # Tell the renderer to draw the objects
-        self.renderer.render(render_objects, self.cam, width, height)
+        self.renderer.render(list(self.render_objects.values()), self.cam, width, height)
 
-        # Clean up the temporary render objects
-        for ro in render_objects:
+
+    def closeEvent(self, event):
+        for ro in self.render_objects.values():
             ro.release()
+        super().closeEvent(event)
 
 
     def update_camera(self, dt: float = 0.016): # dt is roughly 1/60th of a second

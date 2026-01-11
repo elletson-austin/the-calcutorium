@@ -86,7 +86,7 @@ class MathFunction(SceneObject):
         return np.array(vertices, dtype=np.float32)
     
 class LorenzAttractor(SceneObject):
-    def __init__(self, num_points: int = 10_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.01, steps:int = 5):
+    def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):
         super().__init__(Mode=Mode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
         self.sigma = sigma
         self.rho = rho
