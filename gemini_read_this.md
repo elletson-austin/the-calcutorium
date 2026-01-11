@@ -35,3 +35,5 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   This separation of concerns allows for rapid prototyping. Adding new features primarily involves
   adding a UI element to the MainWindow and writing a corresponding method to modify the Scene,
   without needing to touch the complex rendering code in the View.
+
+TODO implement commands that can be typed into the input_widget

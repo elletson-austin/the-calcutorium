@@ -1,6 +1,8 @@
 import moderngl
+import numpy as np
+
 from camera import Camera
-from scene import SceneObject
+from scene import SceneObject, LorenzAttractor
 from render_types import ProgramID, Mode
 
 
@@ -8,6 +10,7 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
 
     def __init__(self, ctx: moderngl.Context):
         self.programs: dict[ProgramID, moderngl.Program] = {}
+        self.compute_shaders: dict[ProgramID, moderngl.ComputeShader] = {}
         self.ctx = ctx
 
     
@@ -42,6 +45,87 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         """
         return VERTEX_SOURCE, FRAGMENT_SOURCE
     
+    def lorenz_attractor_src(self):
+        VERTEX_SHADER = """
+        #version 330
+
+        in vec4 in_position;
+
+        uniform mat4 u_view;
+        uniform mat4 u_proj;
+
+        out vec3 frag_pos;
+
+        void main() {
+            frag_pos = in_position.xyz;
+            gl_Position = u_proj * u_view * vec4(in_position.xyz, 1.0);
+            gl_PointSize = 0.5; 
+        }
+        """
+        FRAGMENT_SHADER = """
+        #version 330
+
+        in vec3 frag_pos;
+        out vec4 fragColor;
+
+        void main() {
+            fragColor = vec4(1.0, 0.2, 0.2, 1.0);
+        }
+        """
+        return VERTEX_SHADER, FRAGMENT_SHADER
+    
+    def lorenz_attractor_compute_src(self):
+        COMPUTE_SHADER = """
+        #version 430
+
+        layout(local_size_x = 256) in;
+
+        layout(std430, binding = 0) buffer PointsBuffer {
+            vec4 points[];
+        };
+
+        uniform float dt;
+        uniform float sigma;
+        uniform float rho;
+        uniform float beta;
+        uniform int steps;
+
+        void main() {
+            uint idx = gl_GlobalInvocationID.x;
+            if (idx >= points.length()) return;
+            
+            vec3 p = points[idx].xyz;
+            
+            for (int i = 0; i < steps; i++) {
+                float dx = sigma * (p.y - p.x);
+                float dy = p.x * (rho - p.z) - p.y;
+                float dz = p.x * p.y - beta * p.z;
+                
+                p.x += dx * dt;
+                p.y += dy * dt;
+                p.z += dz * dt;
+            }
+            
+            points[idx].xyz = p;
+        }
+        """
+        return COMPUTE_SHADER
+    
+    def build_compute_shader(self, program_id) -> moderngl.ComputeShader:
+        if program_id in self.compute_shaders:
+            return self.compute_shaders[program_id]
+
+        if program_id == ProgramID.LORENZ_ATTRACTOR:
+            COMPUTE_SOURCE = self.lorenz_attractor_compute_src()
+        else:
+            print('no valid compute shader source code available') 
+            return 
+        
+        compute_shader = self.ctx.compute_shader(COMPUTE_SOURCE)
+        
+        self.compute_shaders[program_id] = compute_shader
+        return compute_shader
+
 
     def build_program(self, program_id) -> moderngl.Program: # think of as the material 
         if program_id in self.programs:
@@ -49,6 +133,8 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
 
         if program_id == ProgramID.BASIC_3D:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.basic_3d_src()
+        elif program_id == ProgramID.LORENZ_ATTRACTOR:
+            VERTEX_SOURCE, FRAGMENT_SOURCE = self.lorenz_attractor_src()
         else:
             print('no valid shader source code available') 
             return 
@@ -60,23 +146,24 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         self.programs[program_id] = program
         return program
     
+    
 class RenderObject:
 
     def __init__(self,
         program_id: ProgramID,
         vao: moderngl.VertexArray,
         vbo: moderngl.Buffer,
-        # num_vertexes: int, # This is implicitly stored in the vao
         mode: Mode,
-        dynamic: bool = False,
+        num_vertexes: int,
+        compute_shader: moderngl.ComputeShader = None,
         ) -> None:
         
         self.program_id = program_id
-        # self.num_vertexes = num_vertexes
-        self.mode = mode
-        self.dynamic = dynamic
         self.vao = vao
         self.vbo = vbo
+        self.mode = mode
+        self.num_vertexes = num_vertexes
+        self.compute_shader = compute_shader
 
 
     def release(self):
@@ -89,35 +176,56 @@ class Renderer:
         self.ctx = ctx
         self.program_manager = ProgramManager(self.ctx)
     
-
     def create_render_object(self, obj: SceneObject) -> RenderObject:
-        program = self.program_manager.build_program(obj.program_id)
-        vbo = self.ctx.buffer(obj.vertices.tobytes())
-        vao = self.ctx.vertex_array(
-            program,
-            [(vbo, "3f 3f", "in_position", "in_color")]
-        )
-        render_object = RenderObject(
-            program_id=obj.program_id,
-            vao=vao,
-            vbo=vbo,
-            # num_vertexes=len(obj.vertices)//6,
-            mode=obj.mode,
-            dynamic=obj.dynamic
-        )
-        return render_object
-    
+        program = self.program_manager.build_program(obj.ProgramID)
+        #mode
+        if isinstance(obj, LorenzAttractor):
+            vbo = self.ctx.buffer(obj.vertices.tobytes())
+            vao = self.ctx.vertex_array(
+                program,
+                [(vbo, "4f", "in_position")]
+            )
+            compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
+            compute_shader['sigma'] = obj.sigma
+            compute_shader['rho'] = obj.rho
+            compute_shader['beta'] = obj.beta
+            compute_shader['dt'] = obj.dt
+            compute_shader['steps'] = obj.steps
+
+            return RenderObject(
+                program_id=obj.ProgramID,
+                vao=vao,
+                vbo=vbo,
+                mode=obj.Mode,
+                num_vertexes=obj.num_points,
+                compute_shader=compute_shader,
+            )
+        else: # For other objects
+            vbo = self.ctx.buffer(obj.vertices.tobytes())
+            vao = self.ctx.vertex_array(
+                program,
+                [(vbo, "3f 3f", "in_position", "in_color")]
+            )
+            return RenderObject(
+                program_id=obj.ProgramID,
+                vao=vao,
+                vbo=vbo,
+                mode=obj.Mode,
+                num_vertexes=len(obj.vertices) // 6,
+            )
 
     def render(self, render_objects: list, cam: Camera, width: int, height: int) -> list[RenderObject]:
 
-        # Each object uses its own VAO and program. TODO render objects based off of common program
         for ro in render_objects:
-            # The VAO already knows which program to use. We just need to set the uniforms.
+            if ro.compute_shader:
+                ro.vbo.bind_to_storage_buffer(0)
+                group_size = (ro.num_vertexes + 255) // 256
+                ro.compute_shader.run(group_x=group_size)
+
             program = ro.vao.program
             program["u_view"].write(cam.get_view_matrix())
             program["u_proj"].write(cam.get_projection_matrix(width, height))
 
-            # Choose the correct draw mode
             if ro.mode == Mode.POINTS:
                 m = moderngl.POINTS
             elif ro.mode == Mode.LINES:
@@ -129,7 +237,6 @@ class Renderer:
             elif ro.mode == Mode.TRIANGLES:
                 m = moderngl.TRIANGLES
             else:
-                m = moderngl.POINTS  # fallback
+                m = moderngl.POINTS
 
-            # Render the object
             ro.vao.render(mode=m)

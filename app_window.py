@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, Q
 from PySide6.QtCore import Qt, QObject, QEvent # QObject and QEvent for event filter
 
 # Import our custom components
-from scene import Scene, Axes, MathFunction
+from scene import Scene, Axes, MathFunction, LorenzAttractor
 from render_space_pyside import PySideRenderSpace
 from input_widget import InputWidget
 
@@ -35,6 +35,11 @@ class MainWindow(QMainWindow):
         func = MathFunction("x**2")
         func.name = "y = x^2"
         self.scene.objects.append(func)
+
+        # Add the lorenz attractor to the scene
+        lorenz = LorenzAttractor()
+        lorenz.name = "Lorenz Attractor"
+        self.scene.objects.append(lorenz)
 
         # Create the View (PySideRenderSpace)
         self.render_widget = PySideRenderSpace()

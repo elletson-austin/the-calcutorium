@@ -11,3 +11,4 @@ class Mode(Enum):
 
 class ProgramID(Enum):
     BASIC_3D = auto()
+    LORENZ_ATTRACTOR = auto()

@@ -54,7 +54,7 @@ class Axes(SceneObject):
 
         self.mode = Mode.LINES
         self.dynamic = False
-        self.program_id = ProgramID.BASIC_3D
+        self.ProgramID = ProgramID.BASIC_3D
 
 class MathFunction(SceneObject):
 
@@ -69,7 +69,7 @@ class MathFunction(SceneObject):
         self.points = points
         self.vertices = self._generate_vertices()
         self.mode = Mode.LINE_STRIP
-        self.program_id = ProgramID.BASIC_3D
+        self.ProgramID = ProgramID.BASIC_3D
 
     def _generate_vertices(self):
         vertices = []
@@ -84,3 +84,23 @@ class MathFunction(SceneObject):
             except Exception as e:
                 print(f"Could not evaluate equation at x={x}: {e}")
         return np.array(vertices, dtype=np.float32)
+    
+class LorenzAttractor(SceneObject):
+    def __init__(self, num_points: int = 10_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.01, steps:int = 5):
+        super().__init__(Mode=Mode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
+        self.sigma = sigma
+        self.rho = rho
+        self.beta = beta
+        self.dt = dt
+        self.steps = steps
+        self.num_points = num_points
+        self.vertices = self.create_initial_points(num_points=self.num_points)
+
+    def create_initial_points(self,num_points: int) -> np.ndarray:
+        # Note: We are not including color data here, as the fragment shader will assign a color.
+        # The vertex format is just position (x, y, z, w).
+        initial_points = np.random.randn(num_points, 4).astype(np.float32)
+        initial_points[:, :3] *= 2.0
+        initial_points[:, :3] += [1.0, 1.0, 1.0]
+        initial_points[:, 3] = 1.0
+        return initial_points
