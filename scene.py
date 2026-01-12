@@ -70,6 +70,7 @@ class MathFunction(SceneObject):
         self.vertices = self._generate_vertices()
         self.mode = Mode.LINE_STRIP
         self.ProgramID = ProgramID.BASIC_3D
+        self.is_dirty = False
 
     def _generate_vertices(self):
         vertices = []
@@ -84,6 +85,11 @@ class MathFunction(SceneObject):
             except Exception as e:
                 print(f"Could not evaluate equation at x={x}: {e}")
         return np.array(vertices, dtype=np.float32)
+
+    def regenerate(self, new_equation_str: str):
+        self.equation_str = new_equation_str
+        self.vertices = self._generate_vertices()
+        self.is_dirty = True
     
 class LorenzAttractor(SceneObject):
     def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):

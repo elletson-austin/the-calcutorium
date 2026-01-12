@@ -37,7 +37,7 @@ class Camera: # TODO It would make sense to have two different camera objects be
         if position_center is not None:
             self.position_center = position_center
         else:
-            self.position_center = np.array([0.0, 20.0, 25.0], dtype=np.float32)
+            self.position_center = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 
         if rotation is not None:
             self.rotation = rotation

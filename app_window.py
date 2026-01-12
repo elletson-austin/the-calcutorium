@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, QHBoxLayout
+from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, QHBoxLayout, QScrollArea
 from PySide6.QtCore import Qt, QObject, QEvent # QObject and QEvent for event filter
 import re
 
@@ -6,6 +6,7 @@ import re
 from scene import Scene, Axes, MathFunction, LorenzAttractor
 from render_space_pyside import PySideRenderSpace
 from input_widget import InputWidget
+from function_editor_widget import FunctionEditorWidget
 
 class TabKeyEventFilter(QObject):
     def __init__(self, render_widget, parent=None):
@@ -32,11 +33,6 @@ class MainWindow(QMainWindow):
         axes.name = "axes"
         self.scene.objects.append(axes)
 
-        # Add the lorenz attractor to the scene
-        lorenz = LorenzAttractor()
-        lorenz.name = "Lorenz Attractor"
-        self.scene.objects.append(lorenz)
-
         # Create the View (PySideRenderSpace)
         self.render_widget = PySideRenderSpace()
         
@@ -56,69 +52,174 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Left vertical layout for the input widget
-        left_layout = QVBoxLayout()
-        left_layout.addStretch(1) # Add a spacer to push the window to the bottom
-        
-        # Small white window
-        self.input_win = InputWidget()
-        left_layout.addWidget(self.input_win)
-        self.input_win.command_entered.connect(self.handle_command)
+        # --- Left Panel ---
+        left_panel = QWidget()
+        left_panel.setFixedWidth(300)
+        left_panel.setStyleSheet("background-color: #2E2E2E;")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Add the left layout and the render widget to the main layout
-        main_layout.addLayout(left_layout, 0) # The '0' is the stretch factor
-        main_layout.addWidget(self.render_widget, 1) # The '1' makes the render widget take up remaining space
+        # Scroll area for function editors
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_widget = QWidget()
+        self.function_editors_layout = QVBoxLayout(scroll_widget)
+        self.function_editors_layout.addStretch(1)
+        scroll_area.setWidget(scroll_widget)
+
+        # Input widget
+        self.input_win = InputWidget()
+        self.input_win.command_entered.connect(self.handle_command)
+        
+        left_layout.addWidget(scroll_area)
+        left_layout.addWidget(self.input_win)
+
+        main_layout.addWidget(left_panel)
+        main_layout.addWidget(self.render_widget, 1)
+
+        self.function_editors = {} # {MathFunction: FunctionEditorWidget}
+
+
+    def update_function_editors(self):
+        # Get current functions from the scene
+        scene_funcs = {obj for obj in self.scene.objects if isinstance(obj, MathFunction)}
+        
+        # Remove widgets for functions that are no longer in the scene
+        for func_obj, widget in list(self.function_editors.items()):
+            if func_obj not in scene_funcs:
+                widget.setParent(None)
+                widget.deleteLater()
+                del self.function_editors[func_obj]
+
+        # Add widgets for new functions
+        for func_obj in scene_funcs:
+            if func_obj not in self.function_editors:
+                editor_widget = FunctionEditorWidget(func_obj)
+                editor_widget.equation_changed.connect(self.on_equation_changed)
+                # Insert new editors at the top
+                self.function_editors_layout.insertWidget(0, editor_widget)
+                self.function_editors[func_obj] = editor_widget
+
+    def on_equation_changed(self, math_function: MathFunction, new_equation: str):
+        print(f"Equation changed for '{math_function.name}': '{new_equation}'")
+        try:
+            math_function.regenerate(new_equation)
+            # Update name to reflect new equation
+            math_function.name = new_equation 
+        except Exception as e:
+            print(f"Error regenerating function: {e}")
+            # Optionally, revert the text in the editor if the new equation is invalid
+            editor = self.function_editors.get(math_function)
+            if editor:
+                editor.equation_input.setText(math_function.equation_str)
+
 
     def handle_command(self, command: str):
         print(f"Command received in MainWindow: {command}")
+
+        command_parts = command.split(' ', 2)
         
-        # Example command: add func "x**3"
-        # Example command: remove func "x**2"
-
-        parts = command.split(' ', 2) # Split into at most 3 parts: action, type, function_string
-        if len(parts) < 3:
-            print("Invalid command format. Expected: <action> <type> \"<function_string>\"")
+        # Handle simple commands first
+        if command == "help":
+            print("Available commands:")
+            print("  help - Display this help message")
+            print("  list - List all objects in the scene")
+            print("  clear - Clear all objects from the scene except the axes")
+            print("  add lorenz - Add a Lorenz attractor to the scene")
+            print("  add func \"<function_string>\" - Add a mathematical function to the scene (e.g., 'add func \"x**2\"')")
+            print("  remove func \"<function_string>\" - Remove a mathematical function from the scene (e.g., 'remove func \"x**2\"')")
             return
 
-        action = parts[0].lower()
-        type_ = parts[1].lower()
-        function_string_quoted = parts[2].strip()
-
-        # Remove quotes from the function string
-        match = re.match(r'^\"(.*)\"$', function_string_quoted)
-        if not match:
-            print("Invalid function string format. Expected: \"<function_string>\"")
+        if command == "clear":
+            # Remove all objects except for the axes
+            self.scene.objects = [obj for obj in self.scene.objects if getattr(obj, 'name', '') == 'axes']
+            self.update_function_editors()
+            print("Scene cleared.")
             return
-        function_string = match.group(1)
 
-        if type_ == "func":
-            if action == "add":
+        if command == "list":
+            if not self.scene.objects:
+                print("No objects in the scene.")
+                return
+            print("Objects in scene:")
+            for obj in self.scene.objects:
+                print(f"  - {getattr(obj, 'name', 'Unnamed Object')} ({type(obj).__name__})")
+            return
+
+        # Handle commands with multiple parts
+        action = command_parts[0].lower()
+
+        if action == "add":
+            if len(command_parts) < 2:
+                print(f"Invalid 'add' command format: '{command}'. Expected: 'add <type> ...'. Type 'help' for available commands.")
+                return
+
+            type_ = command_parts[1].lower()
+            if type_ == "lorenz":
+                # Check if a Lorenz attractor already exists
+                for obj in self.scene.objects:
+                    if isinstance(obj, LorenzAttractor):
+                        print("Lorenz attractor already exists in the scene.")
+                        return
+                lorenz = LorenzAttractor()
+                lorenz.name = "Lorenz Attractor"
+                self.scene.objects.append(lorenz)
+                print("Added Lorenz Attractor.")
+                return
+            
+            if type_ == "func":
+                if len(command_parts) < 3:
+                    print(f"Invalid 'add func' command. Expected: add func \"<value>\".")
+                    return
+                
+                value_string_quoted = command_parts[2].strip()
+                match = re.match(r'^\"(.*)\"$', value_string_quoted)
+                if not match:
+                    print(f"Invalid value format: '{value_string_quoted}'. Expected a quoted string (e.g., \"value\").")
+                    return
+                value_string = match.group(1)
+
                 try:
                     # Check if a function with this equation string already exists
                     for obj in self.scene.objects:
-                        if isinstance(obj, MathFunction) and obj.equation_str == function_string:
-                            print(f"Function '{function_string}' already exists in the scene.")
+                        if isinstance(obj, MathFunction) and obj.equation_str == value_string:
+                            print(f"Function '{value_string}' already exists in the scene.")
                             return
-                    new_func = MathFunction(function_string)
-                    new_func.name = function_string # Assign name for identification
+                    new_func = MathFunction(value_string)
+                    new_func.name = value_string # Assign name for identification
                     self.scene.objects.append(new_func)
-                    print(f"Added function: {function_string}")
+                    self.update_function_editors()
+                    print(f"Added function: {value_string}")
                 except Exception as e:
-                    print(f"Error adding function '{function_string}': {e}")
-            elif action == "remove":
+                    print(f"Error adding function '{value_string}': {e}")
+                return
+
+        if action == "remove":
+            if len(command_parts) < 3:
+                print(f"Invalid 'remove' command format: '{command}'. Expected: 'remove <type> \"<value>\"'. Type 'help' for available commands.")
+                return
+
+            type_ = command_parts[1].lower()
+            value_string_quoted = command_parts[2].strip()
+            match = re.match(r'^\"(.*)\"$', value_string_quoted)
+            if not match:
+                print(f"Invalid value format: '{value_string_quoted}'. Expected a quoted string (e.g., \"value\").")
+                return
+            value_string = match.group(1)
+
+            if type_ == "func":
                 func_found = False
                 for obj in list(self.scene.objects): # Iterate over a copy to allow modification
-                    if isinstance(obj, MathFunction) and obj.equation_str == function_string:
+                    if isinstance(obj, MathFunction) and obj.equation_str == value_string:
                         self.scene.objects.remove(obj)
-                        print(f"Removed function: {function_string}")
+                        self.update_function_editors()
+                        print(f"Removed function: {value_string}")
                         func_found = True
                         break
                 if not func_found:
-                    print(f"Function '{function_string}' not found in the scene.")
-            else:
-                print(f"Unknown action for func type: {action}. Expected 'add' or 'remove'.")
-        else:
-            print(f"Unknown type: {type_}. Expected 'func'.")
+                    print(f"Function '{value_string}' not found in the scene.")
+                return
 
-
-
+        print(f"Unknown or invalid command: '{command}'. Type 'help' for available commands.")
+        return

@@ -64,12 +64,24 @@ class PySideRenderSpace(QOpenGLWidget):
         if width == 0 or height == 0:
             return
 
-        # Create render objects for any new scene objects
+        # Create render objects for any new scene objects and update existing ones
         for obj in self.scene.objects:
-            if obj not in self.render_objects:
-                self.render_objects[obj] = self.renderer.create_render_object(obj)
+            if hasattr(obj, 'vertices') and obj.vertices.size > 0:
+                if obj not in self.render_objects:
+                    self.render_objects[obj] = self.renderer.create_render_object(obj)
+                elif getattr(obj, 'is_dirty', False):
+                    self.renderer.update_render_object(self.render_objects[obj], obj)
+                    obj.is_dirty = False
+            else:
+                if obj in self.render_objects:
+                    ro = self.render_objects.pop(obj)
+                    ro.release()
 
-        # TODO: Handle object removal from the scene
+        # Handle object removal from the scene
+        removed_objects = [obj for obj in self.render_objects if obj not in self.scene.objects]
+        for obj in removed_objects:
+            ro = self.render_objects.pop(obj)
+            ro.release()
 
         # Tell the renderer to draw the objects
         self.renderer.render(list(self.render_objects.values()), self.cam, width, height)

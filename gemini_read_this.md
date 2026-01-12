@@ -37,3 +37,4 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   without needing to touch the complex rendering code in the View.
 
 TODO implement commands that can be typed into the input_widget
+TODO implement a widget that shows a function string and then allows changes to be made to update the mathfunction object connected.

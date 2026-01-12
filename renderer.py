@@ -214,6 +214,11 @@ class Renderer:
                 num_vertexes=len(obj.vertices) // 6,
             )
 
+    def update_render_object(self, ro: RenderObject, obj: SceneObject):
+        ro.vbo.write(obj.vertices.tobytes())
+        ro.num_vertexes = len(obj.vertices) // 6
+
+
     def render(self, render_objects: list, cam: Camera, width: int, height: int) -> list[RenderObject]:
 
         for ro in render_objects:
