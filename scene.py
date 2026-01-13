@@ -13,23 +13,41 @@ class SceneObject:
         self.ProgramID = ProgramID
         self.Mode = Mode
 
+    def to_dict(self):
+        return {'type': self.__class__.__name__}
+
 
 class Scene:
-
     def __init__(self):
         self.objects: list[SceneObject] = []
-
 
     def add(self, obj: SceneObject):
         if obj in self.objects:
             raise ValueError(f"SceneObject already exists")
         self.objects.append(obj)
 
-
     def remove(self, obj: SceneObject):
         if obj not in self.objects:
             raise ValueError(f"SceneObject doesn't exist")
         self.objects.remove(obj)
+
+    def to_dict(self):
+        # Don't save the axes, it's a default part of the scene
+        return [obj.to_dict() for obj in self.objects if isinstance(obj, (MathFunction, LorenzAttractor))]
+
+    def from_dict(self, scene_data):
+        # Clear existing objects except axes
+        self.objects = [obj for obj in self.objects if isinstance(obj, Axes)]
+        for item_data in scene_data:
+            if item_data['type'] == 'MathFunction':
+                new_func = MathFunction(item_data['equation'])
+                new_func.name = item_data['equation']
+                self.objects.append(new_func)
+            elif item_data['type'] == 'LorenzAttractor':
+                # You might want to save/load parameters for this in the future
+                lorenz = LorenzAttractor()
+                lorenz.name = "Lorenz Attractor"
+                self.objects.append(lorenz)
 
 
 class Axes(SceneObject):
@@ -72,6 +90,11 @@ class MathFunction(SceneObject):
         self.ProgramID = ProgramID.BASIC_3D
         self.is_dirty = False
 
+    def to_dict(self):
+        d = super().to_dict()
+        d['equation'] = self.equation_str
+        return d
+
     def _generate_vertices(self):
         vertices = []
         x_values = np.linspace(self.x_range[0], self.x_range[1], self.points)
@@ -101,6 +124,9 @@ class LorenzAttractor(SceneObject):
         self.steps = steps
         self.num_points = num_points
         self.vertices = self.create_initial_points(num_points=self.num_points)
+
+    def to_dict(self):
+        return super().to_dict()
 
     def create_initial_points(self,num_points: int) -> np.ndarray:
         # Note: We are not including color data here, as the fragment shader will assign a color.

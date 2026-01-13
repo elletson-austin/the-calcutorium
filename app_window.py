@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, QHBoxLayout, QScrollArea
 from PySide6.QtCore import Qt, QObject, QEvent # QObject and QEvent for event filter
 import shlex
+import json
 
 # Import our custom components
 from scene import Scene, Axes, MathFunction, LorenzAttractor
@@ -134,6 +135,8 @@ class MainWindow(QMainWindow):
             print("  help - Display this help message")
             print("  list - List all objects in the scene")
             print("  clear - Clear all objects from the scene except the axes")
+            print("  save <filename> - Save the current scene to a file")
+            print("  load <filename> - Load a scene from a file")
             print("  view 3d - Switch to 3D view")
             print("  view 2d xy - Switch to 2D view on the XY plane")
             print("  view 2d xz - Switch to 2D view on the XZ plane")
@@ -161,6 +164,37 @@ class MainWindow(QMainWindow):
 
         # Handle commands with multiple parts
         action = command_parts[0].lower()
+
+        if action == "save":
+            if len(command_parts) < 2:
+                print("Invalid 'save' command. Expected: save <filename>")
+                return
+            filename = command_parts[1]
+            try:
+                scene_data = self.scene.to_dict()
+                with open(filename, 'w') as f:
+                    json.dump(scene_data, f, indent=4)
+                print(f"Scene saved to {filename}")
+            except Exception as e:
+                print(f"Error saving scene: {e}")
+            return
+
+        if action == "load":
+            if len(command_parts) < 2:
+                print("Invalid 'load' command. Expected: load <filename>")
+                return
+            filename = command_parts[1]
+            try:
+                with open(filename, 'r') as f:
+                    scene_data = json.load(f)
+                self.scene.from_dict(scene_data)
+                self.update_function_editors()
+                print(f"Scene loaded from {filename}")
+            except FileNotFoundError:
+                print(f"Error: File not found '{filename}'")
+            except Exception as e:
+                print(f"Error loading scene: {e}")
+            return
 
         if action == "view":
             if len(command_parts) < 2:
