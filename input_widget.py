@@ -7,7 +7,7 @@ class InputWidget(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(300, 200)
+        self.setFixedSize(300, 100)
         self.setStyleSheet("background-color: #2E2E2E;")
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 

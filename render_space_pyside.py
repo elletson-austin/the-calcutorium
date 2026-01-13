@@ -9,8 +9,9 @@ from camera import Camera, InputState, Projection, CameraMode
 
 
 class PySideRenderSpace(QOpenGLWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, output_widget=None):
         super().__init__(parent)
+        self.output_widget = output_widget
         self.cam: Camera = Camera()
         self.input_state: InputState = InputState()
         self.ctx: moderngl.Context = None
@@ -217,10 +218,8 @@ class PySideRenderSpace(QOpenGLWidget):
             if self.cam.mode == CameraMode.ThreeD:
                 self.cam.mode = CameraMode.TwoD
                 self.cam.projection = Projection.Orthographic
-                print("Switched to 2D Mode")
-            else:
-                self.cam.mode = CameraMode.ThreeD
-                print("Switched to 3D Mode")
+                self.output_widget.append_text("Switched to 2D Mode")
+            self.output_widget.append_text("Switched to 3D Mode")
 
         super().keyPressEvent(event)
 

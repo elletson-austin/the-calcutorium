@@ -13,23 +13,41 @@ class SceneObject:
         self.ProgramID = ProgramID
         self.Mode = Mode
 
+    def to_dict(self):
+        return {'type': self.__class__.__name__}
+
 
 class Scene:
-
     def __init__(self):
         self.objects: list[SceneObject] = []
-
 
     def add(self, obj: SceneObject):
         if obj in self.objects:
             raise ValueError(f"SceneObject already exists")
         self.objects.append(obj)
 
-
     def remove(self, obj: SceneObject):
         if obj not in self.objects:
             raise ValueError(f"SceneObject doesn't exist")
         self.objects.remove(obj)
+
+    def to_dict(self):
+        # Don't save the axes, it's a default part of the scene
+        return [obj.to_dict() for obj in self.objects if isinstance(obj, (MathFunction, LorenzAttractor))]
+
+    def from_dict(self, scene_data):
+        # Clear existing objects except axes
+        self.objects = [obj for obj in self.objects if isinstance(obj, Axes)]
+        for item_data in scene_data:
+            if item_data['type'] == 'MathFunction':
+                new_func = MathFunction(item_data['equation'])
+                new_func.name = item_data['equation']
+                self.objects.append(new_func)
+            elif item_data['type'] == 'LorenzAttractor':
+                # You might want to save/load parameters for this in the future
+                lorenz = LorenzAttractor()
+                lorenz.name = "Lorenz Attractor"
+                self.objects.append(lorenz)
 
 
 class Axes(SceneObject):
@@ -58,7 +76,7 @@ class Axes(SceneObject):
 
 class MathFunction(SceneObject):
 
-    def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 100):
+    def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 100, output_widget=None):
         """
         Parses a string to create a plottable math function.
         WARNING: This uses eval() and is not safe with untrusted input.
@@ -67,13 +85,24 @@ class MathFunction(SceneObject):
         self.equation_str = equation_str
         self.x_range = x_range
         self.points = points
+        self.output_widget = output_widget
         self.vertices = self._generate_vertices()
         self.mode = Mode.LINE_STRIP
         self.ProgramID = ProgramID.BASIC_3D
         self.is_dirty = False
 
+    def to_dict(self):
+        d = super().to_dict()
+        d['equation'] = self.equation_str
+        return d
+
     def _generate_vertices(self):
         vertices = []
+        if not self.equation_str.strip(): # Check if equation string is empty or just whitespace
+            if self.output_widget:
+                self.output_widget.append_text("MathFunction: Equation string is empty, cannot generate vertices.")
+            return np.array([], dtype=np.float32)
+
         x_values = np.linspace(self.x_range[0], self.x_range[1], self.points)
         for x in x_values:
             try:
@@ -83,7 +112,10 @@ class MathFunction(SceneObject):
                 r, g, b = 1, 1, 1  # White color for the plot
                 vertices.extend([x, y, z, r, g, b])
             except Exception as e:
-                print(f"Could not evaluate equation at x={x}: {e}")
+                if self.output_widget:
+                    self.output_widget.append_text(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x}: {e}")
+                else:
+                    print(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x}: {e}")
         return np.array(vertices, dtype=np.float32)
 
     def regenerate(self, new_equation_str: str):
@@ -101,6 +133,9 @@ class LorenzAttractor(SceneObject):
         self.steps = steps
         self.num_points = num_points
         self.vertices = self.create_initial_points(num_points=self.num_points)
+
+    def to_dict(self):
+        return super().to_dict()
 
     def create_initial_points(self,num_points: int) -> np.ndarray:
         # Note: We are not including color data here, as the fragment shader will assign a color.

@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, QHBoxLayout, QScrollArea
 from PySide6.QtCore import Qt, QObject, QEvent # QObject and QEvent for event filter
 import shlex
+import json
 
 # Import our custom components
 from scene import Scene, Axes, MathFunction, LorenzAttractor
@@ -8,6 +9,7 @@ from render_space_pyside import PySideRenderSpace
 from camera import CameraMode, SnapMode
 from input_widget import InputWidget
 from function_editor_widget import FunctionEditorWidget
+from output_widget import OutputWidget
 
 class TabKeyEventFilter(QObject):
     def __init__(self, render_widget, parent=None):
@@ -35,7 +37,7 @@ class MainWindow(QMainWindow):
         self.scene.objects.append(axes)
 
         # Create the View (PySideRenderSpace)
-        self.render_widget = PySideRenderSpace()
+        self.render_widget = PySideRenderSpace(output_widget=self.output_widget)
         
         # Connect the View to the Model
         self.render_widget.set_scene(self.scene)
@@ -72,9 +74,13 @@ class MainWindow(QMainWindow):
         # Input widget
         self.input_win = InputWidget()
         self.input_win.command_entered.connect(self.handle_command)
+
+        # Output widget
+        self.output_widget = OutputWidget()
         
         left_layout.addWidget(scroll_area)
         left_layout.addWidget(self.input_win)
+        left_layout.addWidget(self.output_widget, 1) # Add a stretch factor
 
         main_layout.addWidget(left_panel)
         main_layout.addWidget(self.render_widget, 1)
@@ -103,13 +109,13 @@ class MainWindow(QMainWindow):
                 self.function_editors[func_obj] = editor_widget
 
     def on_equation_changed(self, math_function: MathFunction, new_equation: str):
-        print(f"Equation changed for '{math_function.name}': '{new_equation}'")
+        self.output_widget.append_text(f"Equation changed for '{math_function.name}': '{new_equation}'")        
         try:
             math_function.regenerate(new_equation)
             # Update name to reflect new equation
             math_function.name = new_equation 
         except Exception as e:
-            print(f"Error regenerating function: {e}")
+            self.output_widget.append_text(f"Error regenerating function: {e}")
             # Optionally, revert the text in the editor if the new equation is invalid
             editor = self.function_editors.get(math_function)
             if editor:
@@ -117,12 +123,12 @@ class MainWindow(QMainWindow):
 
 
     def handle_command(self, command: str):
-        print(f"Command received in MainWindow: {command}")
+        self.output_widget.append_text(f"Command received in MainWindow: {command}")
 
         try:
             command_parts = shlex.split(command)
         except ValueError as e:
-            print(f"Error parsing command: {e}")
+            self.output_widget.append_text(f"Error parsing command: {e}")
             return
         
         if not command_parts:
@@ -130,72 +136,106 @@ class MainWindow(QMainWindow):
 
         # Handle simple commands first
         if command == "help":
-            print("Available commands:")
-            print("  help - Display this help message")
-            print("  list - List all objects in the scene")
-            print("  clear - Clear all objects from the scene except the axes")
-            print("  view 3d - Switch to 3D view")
-            print("  view 2d xy - Switch to 2D view on the XY plane")
-            print("  view 2d xz - Switch to 2D view on the XZ plane")
-            print("  view 2d yz - Switch to 2D view on the YZ plane")
-            print("  add lorenz - Add a Lorenz attractor to the scene")
-            print("  add func \"<function_string>\" - Add a mathematical function to the scene (e.g., 'add func \"x**2\"')")
-            print("  remove func \"<function_string>\" - Remove a mathematical function from the scene (e.g., 'remove func \"x**2\"')")
+            help_message = """Available commands:
+  help - Display this help message
+  list - List all objects in the scene
+  clear - Clear all objects from the scene except the axes
+  save <filename> - Save the current scene to a file
+  load <filename> - Load a scene from a file
+  view 3d - Switch to 3D view
+  view 2d xy - Switch to 2D view on the XY plane
+  view 2d xz - Switch to 2D view on the XZ plane
+  view 2d yz - Switch to 2D view on the YZ plane
+  add lorenz - Add a Lorenz attractor to the scene
+  add func \"<function_string>\" - Add a mathematical function to the scene (e.g., 'add func \"x**2\"')
+  remove func \"<function_string>\" - Remove a mathematical function from the scene (e.g., 'remove func \"x**2\"')"""
+            self.output_widget.append_text(help_message)
             return
 
         if command == "clear":
             # Remove all objects except for the axes
             self.scene.objects = [obj for obj in self.scene.objects if getattr(obj, 'name', '') == 'axes']
             self.update_function_editors()
-            print("Scene cleared.")
+            self.output_widget.append_text("Scene cleared.")
             return
 
         if command == "list":
             if not self.scene.objects:
-                print("No objects in the scene.")
+                self.output_widget.append_text("No objects in the scene.")
                 return
-            print("Objects in scene:")
+            self.output_widget.append_text("Objects in scene:")
             for obj in self.scene.objects:
-                print(f"  - {getattr(obj, 'name', 'Unnamed Object')} ({type(obj).__name__})")
+                self.output_widget.append_text(f"  - {getattr(obj, 'name', 'Unnamed Object')} ({type(obj).__name__})")
             return
 
         # Handle commands with multiple parts
         action = command_parts[0].lower()
 
+        if action == "save":
+            if len(command_parts) < 2:
+                self.output_widget.append_text("Invalid 'save' command. Expected: save <filename>")
+                return
+            filename = command_parts[1]
+            try:
+                scene_data = self.scene.to_dict()
+                with open(filename, 'w') as f:
+                    json.dump(scene_data, f, indent=4)
+                self.output_widget.append_text(f"Scene saved to {filename}")
+            except Exception as e:
+                self.output_widget.append_text(f"Error saving scene: {e}")
+            return
+
+        if action == "load":
+            if len(command_parts) < 2:
+                self.output_widget.append_text("Invalid 'load' command. Expected: load <filename>")
+                return
+            filename = command_parts[1]
+            try:
+                with open(filename, 'r') as f:
+                    scene_data = json.load(f)
+                self.scene.from_dict(scene_data)
+                self.update_function_editors()
+                self.output_widget.append_text(f"Scene loaded from {filename}")
+            except FileNotFoundError:
+                self.output_widget.append_text(f"Error: File not found '{filename}'")
+            except Exception as e:
+                self.output_widget.append_text(f"Error loading scene: {e}")
+            return
+
         if action == "view":
             if len(command_parts) < 2:
-                print(f"Invalid 'view' command. Expected: 'view <mode> [plane]'. Type 'help' for available commands.")
+                self.output_widget.append_text(f"Invalid 'view' command. Expected: 'view <mode> [plane]'. Type 'help' for available commands.")
                 return
 
             mode = command_parts[1].lower()
             if mode == "3d":
                 self.render_widget.cam.mode = CameraMode.ThreeD
-                print("Switched to 3D Mode")
+                self.output_widget.append_text("Switched to 3D Mode")
                 return
             
             if mode == "2d":
                 if len(command_parts) < 3:
-                    print(f"Invalid 'view 2d' command. Expected: 'view 2d <plane>'. Use 'xy', 'xz', or 'yz'.")
+                    self.output_widget.append_text(f"Invalid 'view 2d' command. Expected: 'view 2d <plane>'. Use 'xy', 'xz', or 'yz'.")
                     return
                 
                 plane = command_parts[2].lower()
                 self.render_widget.cam.mode = CameraMode.TwoD
                 if plane == "xy":
                     self.render_widget.cam.snap_mode = SnapMode.XY
-                    print("Switched to 2D Mode (XY Plane)")
+                    self.output_widget.append_text("Switched to 2D Mode (XY Plane)")
                 elif plane == "xz":
                     self.render_widget.cam.snap_mode = SnapMode.XZ
-                    print("Switched to 2D Mode (XZ Plane)")
+                    self.output_widget.append_text("Switched to 2D Mode (XZ Plane)")
                 elif plane == "yz":
                     self.render_widget.cam.snap_mode = SnapMode.YZ
-                    print("Switched to 2D Mode (YZ Plane)")
+                    self.output_widget.append_text("Switched to 2D Mode (YZ Plane)")
                 else:
-                    print(f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'.")
+                    self.output_widget.append_text(f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'.")
                 return
 
         if action == "add":
             if len(command_parts) < 2:
-                print(f"Invalid 'add' command format: '{command}'. Expected: 'add <type> ...'. Type 'help' for available commands.")
+                self.output_widget.append_text(f"Invalid 'add' command format: '{command}'. Expected: 'add <type> ...'. Type 'help' for available commands.")
                 return
 
             type_ = command_parts[1].lower()
@@ -203,17 +243,17 @@ class MainWindow(QMainWindow):
                 # Check if a Lorenz attractor already exists
                 for obj in self.scene.objects:
                     if isinstance(obj, LorenzAttractor):
-                        print("Lorenz attractor already exists in the scene.")
+                        self.output_widget.append_text("Lorenz attractor already exists in the scene.")
                         return
                 lorenz = LorenzAttractor()
                 lorenz.name = "Lorenz Attractor"
                 self.scene.objects.append(lorenz)
-                print("Added Lorenz Attractor.")
+                self.output_widget.append_text("Added Lorenz Attractor.")
                 return
             
             if type_ == "func":
                 if len(command_parts) < 3:
-                    print(f"Invalid 'add func' command. Expected: add func \"<value>\".")
+                    self.output_widget.append_text(f"Invalid 'add func' command. Expected: add func \"<value>\".")
                     return
                 
                 value_string = command_parts[2]
@@ -222,26 +262,26 @@ class MainWindow(QMainWindow):
                     # Check if a function with this equation string already exists
                     for obj in self.scene.objects:
                         if isinstance(obj, MathFunction) and obj.equation_str == value_string:
-                            print(f"Function '{value_string}' already exists in the scene.")
+                            self.output_widget.append_text(f"Function '{value_string}' already exists in the scene.")
                             return
                     new_func = MathFunction(value_string)
                     new_func.name = value_string # Assign name for identification
                     self.scene.objects.append(new_func)
                     self.update_function_editors()
-                    print(f"Added function: {value_string}")
+                    self.output_widget.append_text(f"Added function: {value_string}")
                 except Exception as e:
-                    print(f"Error adding function '{value_string}': {e}")
+                    self.output_widget.append_text(f"Error adding function '{value_string}': {e}")
                 return
 
         if action == "remove":
             if len(command_parts) < 2:
-                print(f"Invalid 'remove' command format: '{command}'. Expected: 'remove <type> \"<value>\"'. Type 'help' for available commands.")
+                self.output_widget.append_text(f"Invalid 'remove' command format: '{command}'. Expected: 'remove <type> \"<value>\"'. Type 'help' for available commands.")
                 return
             
             type_ = command_parts[1].lower()
             if type_ == "func":
                 if len(command_parts) < 3:
-                    print(f"Invalid 'remove func' command. Expected: remove func \"<value>\".")
+                    self.output_widget.append_text(f"Invalid 'remove func' command. Expected: remove func \"<value>\".")
                     return
 
                 value_string = command_parts[2]
@@ -251,12 +291,11 @@ class MainWindow(QMainWindow):
                     if isinstance(obj, MathFunction) and obj.equation_str == value_string:
                         self.scene.objects.remove(obj)
                         self.update_function_editors()
-                        print(f"Removed function: {value_string}")
+                        self.output_widget.append_text(f"Removed function: {value_string}")
                         func_found = True
                         break
-                if not func_found:
-                    print(f"Function '{value_string}' not found in the scene.")
+                self.output_widget.append_text(f"Function '{value_string}' not found in the scene.")
                 return
 
-        print(f"Unknown or invalid command: '{command}'. Type 'help' for available commands.")
+        self.output_widget.append_text(f"Unknown or invalid command: '{command}'. Type 'help' for available commands.")
         return
