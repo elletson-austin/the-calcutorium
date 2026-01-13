@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
 
 from renderer import Renderer
-from camera import Camera, InputState, Projection
+from camera import Camera, InputState, Projection, CameraMode
 
 
 class PySideRenderSpace(QOpenGLWidget):
@@ -97,52 +97,61 @@ class PySideRenderSpace(QOpenGLWidget):
         """Updates the camera's position and orientation based on user input."""
         keys = self.input_state.keys_held
 
-        # --- Mouse Rotation ---
-        if self.input_state.left_mouse_pressed:
-            self.cam.rotation[0] += self.input_state.mouse_delta[1] * 2.0 # Pitch
-            self.cam.rotation[1] += self.input_state.mouse_delta[0] * 2.0 # Yaw
-            self.cam.rotation[0] = np.clip(self.cam.rotation[0], -89.0, 89.0) # Clamp pitch
-            self.cam.rotation[1] = self.cam.rotation[1] % 360.0 # Wrap yaw
+        if self.cam.mode == CameraMode.TwoD:
+            # --- Mouse Panning (2D Mode) ---
+            if self.input_state.left_mouse_pressed:
+                # Adjust sensitivity based on distance (zoom level)
+                pan_speed = self.cam.distance / self.height() * 2
+                self.cam.position_center[0] -= self.input_state.mouse_delta[0] * pan_speed
+                self.cam.position_center[1] += self.input_state.mouse_delta[1] * pan_speed
+        else:
+            # --- Mouse Rotation (3D Mode) ---
+            if self.input_state.left_mouse_pressed:
+                self.cam.rotation[0] += self.input_state.mouse_delta[1] * 2.0 # Pitch
+                self.cam.rotation[1] += self.input_state.mouse_delta[0] * 2.0 # Yaw
+                self.cam.rotation[0] = np.clip(self.cam.rotation[0], -89.0, 89.0) # Clamp pitch
+                self.cam.rotation[1] = self.cam.rotation[1] % 360.0 # Wrap yaw
 
-        # --- Mouse Zoom ---
+        # --- Mouse Zoom (Shared) ---
         if abs(self.input_state.scroll_delta) > 0:
             self.cam.distance -= self.input_state.scroll_delta * 1.0
             self.cam.distance = np.clip(self.cam.distance, 1.0, 300.0)
 
-        # --- Keyboard Movement (WASD) ---
-        if Qt.Key.Key_W in keys:
-            # Move camera center forward
-            forward = self.cam.position_center - self.cam.get_position()
-            forward[1] = 0  # Project onto XZ plane
-            if np.linalg.norm(forward) > 0.1:
-                forward = forward / np.linalg.norm(forward)
-                self.cam.position_center += forward * dt * 20.0
+        # --- Keyboard Movement (WASD, 3D Mode Only) ---
+        if self.cam.mode == CameraMode.ThreeD:
+            if Qt.Key.Key_W in keys:
+                # Move camera center forward
+                forward = self.cam.position_center - self.cam.get_position()
+                forward[1] = 0  # Project onto XZ plane
+                if np.linalg.norm(forward) > 0.1:
+                    forward = forward / np.linalg.norm(forward)
+                    self.cam.position_center += forward * dt * 20.0
 
-        if Qt.Key.Key_S in keys:
-            # Move camera center backward
-            forward = self.cam.position_center - self.cam.get_position()
-            forward[1] = 0 # Project onto XZ plane
-            if np.linalg.norm(forward) > 0.1:
-                forward = forward / np.linalg.norm(forward)
-                self.cam.position_center -= forward * dt * 20.0
+            if Qt.Key.Key_S in keys:
+                # Move camera center backward
+                forward = self.cam.position_center - self.cam.get_position()
+                forward[1] = 0 # Project onto XZ plane
+                if np.linalg.norm(forward) > 0.1:
+                    forward = forward / np.linalg.norm(forward)
+                    self.cam.position_center -= forward * dt * 20.0
 
-        if Qt.Key.Key_A in keys:
-            # Move camera center left
-            forward = self.cam.position_center - self.cam.get_position()
-            right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
-            right[1] = 0 # Project onto XZ plane
-            if np.linalg.norm(right) > 0.1:
-                right = right / np.linalg.norm(right)
-                self.cam.position_center -= right * dt * 20.0
+            if Qt.Key.Key_A in keys:
+                # Move camera center left
+                forward = self.cam.position_center - self.cam.get_position()
+                right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
+                right[1] = 0 # Project onto XZ plane
+                if np.linalg.norm(right) > 0.1:
+                    right = right / np.linalg.norm(right)
+                    self.cam.position_center -= right * dt * 20.0
 
-        if Qt.Key.Key_D in keys:
-            # Move camera center right
-            forward = self.cam.position_center - self.cam.get_position()
-            right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
-            right[1] = 0 # Project onto XZ plane
-            if np.linalg.norm(right) > 0.1:
-                right = right / np.linalg.norm(right)
-                self.cam.position_center += right * dt * 20.0
+            if Qt.Key.Key_D in keys:
+                # Move camera center right
+                forward = self.cam.position_center - self.cam.get_position()
+                right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
+                right[1] = 0 # Project onto XZ plane
+                if np.linalg.norm(right) > 0.1:
+                    right = right / np.linalg.norm(right)
+                    self.cam.position_center += right * dt * 20.0
 
         # Reset mouse and scroll deltas after they've been processed
         self.input_state.mouse_delta[:] = 0
@@ -202,6 +211,17 @@ class PySideRenderSpace(QOpenGLWidget):
                 self.cam.projection = Projection.Perspective
             else:
                 self.cam.projection = Projection.Orthographic
+        
+        # Toggle 2D/3D mode with M key
+        if event.key() == Qt.Key.Key_M:
+            if self.cam.mode == CameraMode.ThreeD:
+                self.cam.mode = CameraMode.TwoD
+                self.cam.projection = Projection.Orthographic
+                print("Switched to 2D Mode")
+            else:
+                self.cam.mode = CameraMode.ThreeD
+                print("Switched to 3D Mode")
+
         super().keyPressEvent(event)
 
 

@@ -36,5 +36,6 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   adding a UI element to the MainWindow and writing a corresponding method to modify the Scene,
   without needing to touch the complex rendering code in the View.
 
-TODO implement commands that can be typed into the input_widget
-TODO implement a widget that shows a function string and then allows changes to be made to update the mathfunction object connected.
+TODO implement a basic way to save the state of the calcutorium.
+TODO better parsing is always appreciated. (possibly switch to sympy)
+TODO make a basic widget to display the print statements that normally go into the python terminal.

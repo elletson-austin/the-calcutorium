@@ -1,10 +1,11 @@
 from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, QHBoxLayout, QScrollArea
 from PySide6.QtCore import Qt, QObject, QEvent # QObject and QEvent for event filter
-import re
+import shlex
 
 # Import our custom components
 from scene import Scene, Axes, MathFunction, LorenzAttractor
 from render_space_pyside import PySideRenderSpace
+from camera import CameraMode, SnapMode
 from input_widget import InputWidget
 from function_editor_widget import FunctionEditorWidget
 
@@ -118,14 +119,25 @@ class MainWindow(QMainWindow):
     def handle_command(self, command: str):
         print(f"Command received in MainWindow: {command}")
 
-        command_parts = command.split(' ', 2)
+        try:
+            command_parts = shlex.split(command)
+        except ValueError as e:
+            print(f"Error parsing command: {e}")
+            return
         
+        if not command_parts:
+            return
+
         # Handle simple commands first
         if command == "help":
             print("Available commands:")
             print("  help - Display this help message")
             print("  list - List all objects in the scene")
             print("  clear - Clear all objects from the scene except the axes")
+            print("  view 3d - Switch to 3D view")
+            print("  view 2d xy - Switch to 2D view on the XY plane")
+            print("  view 2d xz - Switch to 2D view on the XZ plane")
+            print("  view 2d yz - Switch to 2D view on the YZ plane")
             print("  add lorenz - Add a Lorenz attractor to the scene")
             print("  add func \"<function_string>\" - Add a mathematical function to the scene (e.g., 'add func \"x**2\"')")
             print("  remove func \"<function_string>\" - Remove a mathematical function from the scene (e.g., 'remove func \"x**2\"')")
@@ -150,6 +162,37 @@ class MainWindow(QMainWindow):
         # Handle commands with multiple parts
         action = command_parts[0].lower()
 
+        if action == "view":
+            if len(command_parts) < 2:
+                print(f"Invalid 'view' command. Expected: 'view <mode> [plane]'. Type 'help' for available commands.")
+                return
+
+            mode = command_parts[1].lower()
+            if mode == "3d":
+                self.render_widget.cam.mode = CameraMode.ThreeD
+                print("Switched to 3D Mode")
+                return
+            
+            if mode == "2d":
+                if len(command_parts) < 3:
+                    print(f"Invalid 'view 2d' command. Expected: 'view 2d <plane>'. Use 'xy', 'xz', or 'yz'.")
+                    return
+                
+                plane = command_parts[2].lower()
+                self.render_widget.cam.mode = CameraMode.TwoD
+                if plane == "xy":
+                    self.render_widget.cam.snap_mode = SnapMode.XY
+                    print("Switched to 2D Mode (XY Plane)")
+                elif plane == "xz":
+                    self.render_widget.cam.snap_mode = SnapMode.XZ
+                    print("Switched to 2D Mode (XZ Plane)")
+                elif plane == "yz":
+                    self.render_widget.cam.snap_mode = SnapMode.YZ
+                    print("Switched to 2D Mode (YZ Plane)")
+                else:
+                    print(f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'.")
+                return
+
         if action == "add":
             if len(command_parts) < 2:
                 print(f"Invalid 'add' command format: '{command}'. Expected: 'add <type> ...'. Type 'help' for available commands.")
@@ -173,12 +216,7 @@ class MainWindow(QMainWindow):
                     print(f"Invalid 'add func' command. Expected: add func \"<value>\".")
                     return
                 
-                value_string_quoted = command_parts[2].strip()
-                match = re.match(r'^\"(.*)\"$', value_string_quoted)
-                if not match:
-                    print(f"Invalid value format: '{value_string_quoted}'. Expected a quoted string (e.g., \"value\").")
-                    return
-                value_string = match.group(1)
+                value_string = command_parts[2]
 
                 try:
                     # Check if a function with this equation string already exists
@@ -196,19 +234,18 @@ class MainWindow(QMainWindow):
                 return
 
         if action == "remove":
-            if len(command_parts) < 3:
+            if len(command_parts) < 2:
                 print(f"Invalid 'remove' command format: '{command}'. Expected: 'remove <type> \"<value>\"'. Type 'help' for available commands.")
                 return
-
+            
             type_ = command_parts[1].lower()
-            value_string_quoted = command_parts[2].strip()
-            match = re.match(r'^\"(.*)\"$', value_string_quoted)
-            if not match:
-                print(f"Invalid value format: '{value_string_quoted}'. Expected a quoted string (e.g., \"value\").")
-                return
-            value_string = match.group(1)
-
             if type_ == "func":
+                if len(command_parts) < 3:
+                    print(f"Invalid 'remove func' command. Expected: remove func \"<value>\".")
+                    return
+
+                value_string = command_parts[2]
+
                 func_found = False
                 for obj in list(self.scene.objects): # Iterate over a copy to allow modification
                     if isinstance(obj, MathFunction) and obj.equation_str == value_string:

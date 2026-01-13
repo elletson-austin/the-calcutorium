@@ -13,6 +13,11 @@ class SnapMode(Enum):
     YZ = auto()
 
 
+class CameraMode(Enum):
+    TwoD = auto()
+    ThreeD = auto()
+
+
 @dataclass
 class InputState: # Tracks the state of the input
     mouse_pos: np.ndarray = field(
@@ -32,7 +37,8 @@ class Camera: # TODO It would make sense to have two different camera objects be
     def __init__(self, 
                  position_center: np.ndarray = None,
                  rotation: np.ndarray = None,
-                 fov: float = 60.0, distance: float = 50.0):
+                 fov: float = 60.0, distance: float = 50.0,
+                 mode: CameraMode = CameraMode.ThreeD):
         
         if position_center is not None:
             self.position_center = position_center
@@ -48,9 +54,19 @@ class Camera: # TODO It would make sense to have two different camera objects be
         self.distance = distance
         self.projection = Projection.Orthographic
         self.snap_mode = SnapMode.XY
+        self.mode = mode
 
     # Calculate the camera position based on the orientation, distance and center
     def get_position(self) -> np.ndarray: 
+        if self.mode == CameraMode.TwoD:
+            pos = self.position_center.copy()
+            if self.snap_mode == SnapMode.XY:
+                pos[2] += self.distance
+            elif self.snap_mode == SnapMode.XZ:
+                pos[1] += self.distance
+            elif self.snap_mode == SnapMode.YZ:
+                pos[0] += self.distance
+            return pos
         
         pitch = np.radians(self.rotation[0])
         yaw = np.radians(self.rotation[1])
@@ -65,13 +81,28 @@ class Camera: # TODO It would make sense to have two different camera objects be
     def get_view_matrix(self) -> np.ndarray:
         cam_pos = self.get_position()
         target = self.position_center
-        world_up = np.array([0, 1, 0], dtype=np.float32)
+        
+        if self.mode == CameraMode.TwoD:
+            if self.snap_mode == SnapMode.XY:
+                world_up = np.array([0, 1, 0], dtype=np.float32)
+            elif self.snap_mode == SnapMode.XZ:
+                world_up = np.array([0, 0, 1], dtype=np.float32)
+            elif self.snap_mode == SnapMode.YZ:
+                world_up = np.array([0, 1, 0], dtype=np.float32)
+        else:
+            world_up = np.array([0, 1, 0], dtype=np.float32)
         
         forward = target - cam_pos
-        forward = forward / np.linalg.norm(forward)
+        # Normalize forward vector, handling the case where it's zero.
+        norm_forward = np.linalg.norm(forward)
+        if norm_forward > 1e-6:
+            forward /= norm_forward
         
         right = np.cross(forward, world_up)
-        right = right / np.linalg.norm(right)
+        # Normalize right vector
+        norm_right = np.linalg.norm(right)
+        if norm_right > 1e-6:
+            right /= norm_right
         
         up = np.cross(right, forward)
         
