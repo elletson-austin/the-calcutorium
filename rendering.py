@@ -221,6 +221,38 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         }
         """
         return VERTEX_SOURCE, FRAGMENT_SOURCE
+
+    def grid_src(self):
+        VERTEX_SOURCE = """
+        #version 330
+
+        layout (location = 0) in vec3 in_position;
+        layout (location = 1) in vec3 in_color;
+
+        uniform mat4 u_view;
+        uniform mat4 u_proj;
+
+        out vec3 v_color;
+
+        void main() {
+        gl_Position = u_proj * u_view * vec4(in_position, 1.0);
+        gl_PointSize = 2.0;
+        v_color = in_color;
+        }
+        """
+
+        FRAGMENT_SOURCE = """
+        #version 330
+
+        in vec3 v_color;
+        out vec4 fragColor;
+        uniform float u_alpha_multiplier;
+
+        void main() {
+            fragColor = vec4(v_color, 1.0 * u_alpha_multiplier);
+        }
+        """
+        return VERTEX_SOURCE, FRAGMENT_SOURCE
     
     def lorenz_attractor_src(self):
         VERTEX_SHADER = """
@@ -312,6 +344,8 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.basic_3d_src()
         elif program_id == ProgramID.LORENZ_ATTRACTOR:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.lorenz_attractor_src()
+        elif program_id == ProgramID.GRID:
+            VERTEX_SOURCE, FRAGMENT_SOURCE = self.grid_src()
         else:
             print('no valid shader source code available') 
             return 
@@ -407,6 +441,18 @@ class Renderer:
             program = ro.vao.program
             program["u_view"].write(cam.get_view_matrix())
             program["u_proj"].write(cam.get_projection_matrix(width, height))
+            
+            if ro.program_id == ProgramID.GRID:
+                alpha_multiplier = 1.0
+                if cam.mode == CameraMode.ThreeD:
+                    alpha_multiplier = 0.2 
+                elif cam.mode == CameraMode.TwoD:
+                    alpha_multiplier = 1.0
+                if "u_alpha_multiplier" in program:
+                    program["u_alpha_multiplier"].value = alpha_multiplier
+            else:
+                if "u_alpha_multiplier" in program:
+                    program["u_alpha_multiplier"].value = 1.0 # Ensure other objects are opaque
 
             if ro.mode == Mode.POINTS:
                 m = moderngl.POINTS
@@ -455,6 +501,8 @@ class PySideRenderSpace(QOpenGLWidget):
         self.ctx = moderngl.create_context()
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.enable(moderngl.PROGRAM_POINT_SIZE)
+        self.ctx.enable(moderngl.BLEND) # Enable blending for transparency
+        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self.renderer = Renderer(self.ctx)
         self.screen = self.ctx.detect_framebuffer()
 

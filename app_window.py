@@ -5,7 +5,7 @@ import json
 import sys
 
 # Import our custom components
-from scene import Scene, Axes, MathFunction, LorenzAttractor
+from scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
 from rendering import PySideRenderSpace, CameraMode, SnapMode
 from input_widget import InputWidget
 from function_editor_widget import FunctionEditorWidget
@@ -35,6 +35,10 @@ class MainWindow(QMainWindow):
         axes = Axes(length=10.0)
         axes.name = "axes"
         self.scene.objects.append(axes)
+        
+        grid = Grid()
+        grid.name = "grid"
+        self.scene.objects.append(grid)
 
         # Create the View (PySideRenderSpace)
         self.render_widget = PySideRenderSpace()
@@ -143,7 +147,7 @@ class MainWindow(QMainWindow):
         if command == "help":
             help_message = """Available commands:
   help - Display this help message
-  list - List all objects in the scene
+  list - List all objects in the scene, with detailed information for functions
   clear - Clear all objects from the scene except the axes
   save <filename> - Save the current scene to a file
   load <filename> - Load a scene from a file
@@ -168,9 +172,22 @@ class MainWindow(QMainWindow):
             if not self.scene.objects:
                 self.output_widget.write("No objects in the scene.")
                 return
+            
             self.output_widget.write("Objects in scene:")
-            for obj in self.scene.objects:
-                self.output_widget.write(f"  - {getattr(obj, 'name', 'Unnamed Object')} ({type(obj).__name__})")
+            
+            # Separate functions from other objects for display
+            functions = [obj for obj in self.scene.objects if isinstance(obj, MathFunction)]
+            other_objects = [obj for obj in self.scene.objects if not isinstance(obj, MathFunction)]
+
+            if functions:
+                self.output_widget.write("  --- Functions ---")
+                for i, func in enumerate(functions):
+                    self.output_widget.write(f"    [{i}] Name: {func.name}, Equation: '{func.equation_str}'")
+            
+            if other_objects:
+                self.output_widget.write("  --- Other Objects ---")
+                for obj in other_objects:
+                    self.output_widget.write(f"    Name: {getattr(obj, 'name', 'Unnamed Object')} ({type(obj).__name__})")
             return
 
         # Handle commands with multiple parts

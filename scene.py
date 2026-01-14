@@ -1,5 +1,6 @@
 from enum import Enum, auto
 import numpy as np
+from sympy import symbols, lambdify, sympify, SympifyError
 
 
 class Mode(Enum):
@@ -13,6 +14,7 @@ class Mode(Enum):
 class ProgramID(Enum):
     BASIC_3D = auto()
     LORENZ_ATTRACTOR = auto()
+    GRID = auto()
 
 
 
@@ -93,17 +95,50 @@ class MathFunction(SceneObject):
     def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 100, output_widget=None):
         """
         Parses a string to create a plottable math function.
-        WARNING: This uses eval() and is not safe with untrusted input.
         """
         super().__init__(Mode=Mode.LINE_STRIP)
         self.equation_str = equation_str
         self.x_range = x_range
         self.points = points
         self.output_widget = output_widget
+        self._x_symbol = symbols('x') # Define the symbol 'x' for sympy
+        self._sympy_expr = None
+        self._callable_func = None
+        self._parse_and_lambdify() # Parse and lambdify the initial equation
         self.vertices = self._generate_vertices()
         self.mode = Mode.LINE_STRIP
         self.ProgramID = ProgramID.BASIC_3D
         self.is_dirty = False
+
+    def _parse_and_lambdify(self):
+        """
+        Parses the equation string into a sympy expression and then lambdifies it.
+        """
+        if not self.equation_str.strip():
+            self._sympy_expr = None
+            self._callable_func = None
+            return
+
+        try:
+            # Use sympify to parse the string into a sympy expression
+            # Use evaluate=False to prevent immediate evaluation of expressions like sin(pi/2)
+            self._sympy_expr = sympify(self.equation_str, evaluate=False) 
+            # Lambdify the sympy expression into a callable function for numerical evaluation
+            self._callable_func = lambdify(self._x_symbol, self._sympy_expr, 'numpy')
+        except SympifyError as e:
+            if self.output_widget:
+                self.output_widget.append_text(f"MathFunction: Error parsing equation '{self.equation_str}': {e}")
+            else:
+                print(f"MathFunction: Error parsing equation '{self.equation_str}': {e}")
+            self._sympy_expr = None
+            self._callable_func = None
+        except Exception as e:
+            if self.output_widget:
+                self.output_widget.append_text(f"MathFunction: Unexpected error during parsing or lambdifying '{self.equation_str}': {e}")
+            else:
+                print(f"MathFunction: Unexpected error during parsing or lambdifying '{self.equation_str}': {e}")
+            self._sympy_expr = None
+            self._callable_func = None
 
     def to_dict(self):
         d = super().to_dict()
@@ -112,31 +147,55 @@ class MathFunction(SceneObject):
 
     def _generate_vertices(self):
         vertices = []
-        if not self.equation_str.strip(): # Check if equation string is empty or just whitespace
-            if self.output_widget:
+        if not self.equation_str.strip() or self._callable_func is None:
+            if self.output_widget and not self.equation_str.strip():
                 self.output_widget.append_text("MathFunction: Equation string is empty, cannot generate vertices.")
             return np.array([], dtype=np.float32)
 
         x_values = np.linspace(self.x_range[0], self.x_range[1], self.points)
-        for x in x_values:
+        for x_val in x_values:
             try:
-                # WARNING: eval is a security risk. Do not use with untrusted input.
-                y = eval(self.equation_str, {"x": x, "np": np})
+                y = self._callable_func(x_val)
                 z = 0  # For now, plot in the XY plane
                 r, g, b = 1, 1, 1  # White color for the plot
-                vertices.extend([x, y, z, r, g, b])
+                vertices.extend([x_val, y, z, r, g, b])
             except Exception as e:
                 if self.output_widget:
-                    self.output_widget.append_text(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x}: {e}")
+                    self.output_widget.append_text(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x_val}: {e}")
                 else:
-                    print(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x}: {e}")
+                    print(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x_val}: {e}")
         return np.array(vertices, dtype=np.float32)
 
     def regenerate(self, new_equation_str: str):
         self.equation_str = new_equation_str
+        self._parse_and_lambdify() # Re-parse and re-lambdify the new equation
         self.vertices = self._generate_vertices()
         self.is_dirty = True
     
+class Grid(SceneObject):
+    def __init__(self, size: float = 20.0, spacing: float = 1.0):
+        super().__init__(Mode=Mode.LINES)
+        self.size = size
+        self.spacing = spacing
+        self.vertices = self._generate_vertices()
+        self.ProgramID = ProgramID.GRID
+
+    def _generate_vertices(self):
+        vertices = []
+        color = [0.5, 0.5, 0.5] # Grey color for grid lines
+
+        # X-axis parallel lines
+        for i in np.arange(-self.size / 2, self.size / 2 + self.spacing, self.spacing):
+            vertices.extend([-self.size / 2, i, 0] + color)
+            vertices.extend([ self.size / 2, i, 0] + color)
+        
+        # Y-axis parallel lines
+        for i in np.arange(-self.size / 2, self.size / 2 + self.spacing, self.spacing):
+            vertices.extend([i, -self.size / 2, 0] + color)
+            vertices.extend([i,  self.size / 2, 0] + color)
+            
+        return np.array(vertices, dtype=np.float32)
+
 class LorenzAttractor(SceneObject):
     def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):
         super().__init__(Mode=Mode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)

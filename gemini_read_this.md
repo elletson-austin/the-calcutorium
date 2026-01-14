@@ -36,6 +36,12 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   adding a UI element to the MainWindow and writing a corresponding method to modify the Scene,
   without needing to touch the complex rendering code in the View.
 
-TODO better parsing is always appreciated. (possibly switch to sympy)
-TODO make a basic widget to display the print statements that normally go into the python terminal.
-TODO fix the layout of the major widgets on the left hand side. the function editor is crammed in there.
+TODO improving parsing (dont want np.sin(x) want sin(x)).
+TODO add functions in terminal style widget.
+TODO add desmos style grid that is slightly see through in 3d but opaque in 2d
+TODO allow the setting of x0,x1,y0,y1 manually while in 2d to change aspect ratio.
+TODO add more particle sims
+TODO add polar and implicit function compatibility
+TODO add the ability to graph functions like f(x,y) = some z val and it looks like a mesh
+TODO add way to tell f(x)'s apart. (f-sub1, fsub2) using some kind of subscript. or allow custom names for functions.
+TODO when in 2d mode it takes the ranges and evaluates the function so it doesnt abruptly stop. (updates vertices)
