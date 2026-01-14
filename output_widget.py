@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QTextEdit
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor, QTextCursor
 
 class OutputWidget(QTextEdit):
     def __init__(self, parent=None):
@@ -13,6 +13,15 @@ class OutputWidget(QTextEdit):
             padding: 5px;
         """)
 
-    def append_text(self, text):
-        self.moveCursor(self.textCursor().End)
-        self.insertPlainText(text + '\\n')
+    def write(self, text: str, end: str = '\n'):
+        self.moveCursor(QTextCursor.End)
+        self.insertPlainText(text + end)
+        self.moveCursor(QTextCursor.End)
+
+    def write_error(self, text: str, end: str = '\n'):
+        self.moveCursor(QTextCursor.End)
+        self.setTextColor(QColor("#FF0000"))
+        self.insertPlainText(text + end)
+        self.moveCursor(QTextCursor.End)
+        self.setTextColor(QColor("#F0F0F0"))
+

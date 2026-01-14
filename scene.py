@@ -1,5 +1,19 @@
+from enum import Enum, auto
 import numpy as np
-from render_types import ProgramID, Mode
+
+
+class Mode(Enum):
+    POINTS = auto()
+    LINES = auto()
+    LINE_STRIP = auto()
+    TRIANGLES = auto()
+    LINE_LOOP = auto()
+
+
+class ProgramID(Enum):
+    BASIC_3D = auto()
+    LORENZ_ATTRACTOR = auto()
+
 
 
 class SceneObject:

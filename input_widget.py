@@ -7,11 +7,12 @@ class InputWidget(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(300, 100)
+        self.setFixedHeight(40)
         self.setStyleSheet("background-color: #2E2E2E;")
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self.command_input = QLineEdit()
         self.command_input.setPlaceholderText("Enter a command...")
@@ -25,7 +26,6 @@ class InputWidget(QFrame):
         """)
 
         layout.addWidget(self.command_input)
-        layout.addStretch(1) # Pushes the input to the top
 
     def on_command(self):
         command = self.command_input.text()
