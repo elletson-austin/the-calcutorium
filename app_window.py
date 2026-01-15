@@ -286,7 +286,7 @@ class MainWindow(QMainWindow):
                         if isinstance(obj, MathFunction) and obj.equation_str == value_string:
                             self.output_widget.write(f"Function '{value_string}' already exists in the scene.")
                             return
-                    new_func = MathFunction(value_string)
+                    new_func = MathFunction(value_string, output_widget=self.output_widget)
                     new_func.name = value_string # Assign name for identification
                     self.scene.objects.append(new_func)
                     self.update_function_editors()

@@ -92,12 +92,13 @@ class Axes(SceneObject):
 
 class MathFunction(SceneObject):
 
-    def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 100, output_widget=None):
+    def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 2000, output_widget=None):
         """
         Parses a string to create a plottable math function.
         """
         super().__init__(Mode=Mode.LINE_STRIP)
         self.equation_str = equation_str
+        self.initial_x_range = x_range
         self.x_range = x_range
         self.points = points
         self.output_widget = output_widget
@@ -169,6 +170,17 @@ class MathFunction(SceneObject):
     def regenerate(self, new_equation_str: str):
         self.equation_str = new_equation_str
         self._parse_and_lambdify() # Re-parse and re-lambdify the new equation
+        self.vertices = self._generate_vertices()
+        self.is_dirty = True
+
+    def update_range(self, x_range: tuple):
+        if self.x_range != x_range:
+            self.x_range = x_range
+            self.vertices = self._generate_vertices()
+            self.is_dirty = True
+
+    def reset_range(self):
+        self.x_range = self.initial_x_range
         self.vertices = self._generate_vertices()
         self.is_dirty = True
     

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from PySide6.QtOpenGLWidgets import QOpenGLWidget   
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
-from scene import SceneObject, LorenzAttractor, ProgramID, Mode
+from scene import SceneObject, LorenzAttractor, ProgramID, Mode, MathFunction
 
 
 class Projection(Enum):
@@ -128,6 +128,24 @@ class Camera: # TODO It would make sense to have two different camera objects be
         
         return view.T.flatten()
     
+    def get_2d_ranges(self, width, height):
+        if self.mode != CameraMode.TwoD:
+            return None, None
+
+        if height == 0:
+            aspect = 1.0
+        else:
+            aspect = width / height
+        
+        view_height = self.distance
+        view_width = view_height * aspect
+        
+        x_min = self.position_center[0] - view_width / 2
+        x_max = self.position_center[0] + view_width / 2
+        y_min = self.position_center[1] - view_height / 2
+        y_max = self.position_center[1] + view_height / 2
+        
+        return (x_min, x_max), (y_min, y_max)
 
     def _perspective_matrix(self, width, height) -> np.ndarray: 
         if height == 0:
@@ -149,18 +167,7 @@ class Camera: # TODO It would make sense to have two different camera objects be
         return proj.T.flatten()
         
 
-    def _orthographic_matrix(self, width, height):
-        if height == 0:
-            aspect = 1.0
-        else:
-            aspect = width / height
-        
-        view_height = self.distance
-        top = view_height / 2.0
-        bottom = -view_height / 2.0
-        right = top * aspect
-        left = -top * aspect
-
+    def _orthographic_matrix(self, left, right, bottom, top):
         near   = -1000.0
         far    =  1000.0
 
@@ -176,11 +183,22 @@ class Camera: # TODO It would make sense to have two different camera objects be
     
 
     def get_projection_matrix(self, width, height):
-        
         if self.projection == Projection.Perspective:
             return self._perspective_matrix(width, height)
-        else:
-            return self._orthographic_matrix(width, height)
+        else: # Orthographic
+            if self.mode == CameraMode.TwoD:
+                (left, right), (bottom, top) = self.get_2d_ranges(width, height)
+                return self._orthographic_matrix(left, right, bottom, top)
+            else: # 3D Orthographic
+                if height == 0: aspect = 1.0
+                else: aspect = width / height
+                
+                view_height = self.distance
+                top_3d = view_height / 2.0
+                bottom_3d = -view_height / 2.0
+                right_3d = top_3d * aspect
+                left_3d = -top_3d * aspect
+                return self._orthographic_matrix(left_3d, right_3d, bottom_3d, top_3d)
 
 
 class ProgramManager: # holds and stores programs that draw points, lines, etc.
@@ -528,6 +546,16 @@ class PySideRenderSpace(QOpenGLWidget):
         if width == 0 or height == 0:
             return
 
+        # Update MathFunctions if in 2D mode
+        if self.cam.mode == CameraMode.TwoD:
+            x_range, _ = self.cam.get_2d_ranges(width, height)
+            if x_range:
+                # Add a small buffer to the range to avoid seeing the edges of the plot
+                buffered_x_range = (x_range[0] - 1, x_range[1] + 1) # A buffer of +/- 1 unit
+                for obj in self.scene.objects:
+                    if isinstance(obj, MathFunction):
+                        obj.update_range(buffered_x_range)
+
         # Create render objects for any new scene objects and update existing ones
         for obj in self.scene.objects:
             if hasattr(obj, 'vertices') and obj.vertices.size > 0:
@@ -681,6 +709,13 @@ class PySideRenderSpace(QOpenGLWidget):
             if self.cam.mode == CameraMode.ThreeD:
                 self.cam.mode = CameraMode.TwoD
                 self.cam.projection = Projection.Orthographic
+            elif self.cam.mode == CameraMode.TwoD:
+                self.cam.mode = CameraMode.ThreeD
+                self.cam.projection = Projection.Perspective
+                # Reset the range of all functions when switching back to 3D
+                for obj in self.scene.objects:
+                    if isinstance(obj, MathFunction):
+                        obj.reset_range()
 
         super().keyPressEvent(event)
 
