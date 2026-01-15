@@ -171,6 +171,13 @@ class MathFunction(SceneObject):
         self._parse_and_lambdify() # Re-parse and re-lambdify the new equation
         self.vertices = self._generate_vertices()
         self.is_dirty = True
+
+    def set_x_range(self, x_range: tuple):
+        # Add a small tolerance to avoid regenerating on tiny pans
+        if not np.allclose(self.x_range, x_range, atol=1e-3):
+            self.x_range = x_range
+            self.vertices = self._generate_vertices()
+            self.is_dirty = True
     
 class Grid(SceneObject):
     def __init__(self, size: float = 20.0, spacing: float = 1.0):

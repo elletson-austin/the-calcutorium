@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from PySide6.QtOpenGLWidgets import QOpenGLWidget   
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
-from scene import SceneObject, LorenzAttractor, ProgramID, Mode
+from scene import SceneObject, LorenzAttractor, ProgramID, Mode, MathFunction
 
 
 class Projection(Enum):
@@ -528,6 +528,21 @@ class PySideRenderSpace(QOpenGLWidget):
         if width == 0 or height == 0:
             return
 
+        # Dynamically update function ranges in 2D mode
+        if self.cam.mode == CameraMode.TwoD and self.cam.snap_mode == SnapMode.XY:
+            if height > 0:
+                aspect = width / height
+                view_width = self.cam.distance * aspect
+                # Add a buffer to the range to avoid seeing the edges of the plot
+                buffer_factor = 1.1 
+                x_min = self.cam.position_center[0] - (view_width / 2) * buffer_factor
+                x_max = self.cam.position_center[0] + (view_width / 2) * buffer_factor
+                new_x_range = (x_min, x_max)
+
+                for obj in self.scene.objects:
+                    if isinstance(obj, MathFunction):
+                        obj.set_x_range(new_x_range)
+
         # Create render objects for any new scene objects and update existing ones
         for obj in self.scene.objects:
             if hasattr(obj, 'vertices') and obj.vertices.size > 0:
@@ -565,9 +580,9 @@ class PySideRenderSpace(QOpenGLWidget):
             # --- Mouse Panning (2D Mode) ---
             if self.input_state.left_mouse_pressed:
                 # Adjust sensitivity based on distance (zoom level)
-                pan_speed = self.cam.distance / self.height() * 2
-                self.cam.position_center[0] -= self.input_state.mouse_delta[0] * pan_speed
-                self.cam.position_center[1] += self.input_state.mouse_delta[1] * pan_speed
+                pan_speed = self.cam.distance / self.height()
+                self.cam.position_center[0] -= self.input_state.mouse_delta[0] *2
+                self.cam.position_center[1] += self.input_state.mouse_delta[1] 
         else:
             # --- Mouse Rotation (3D Mode) ---
             if self.input_state.left_mouse_pressed:
