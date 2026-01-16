@@ -1,6 +1,7 @@
 from enum import Enum, auto
 import numpy as np
 from sympy import symbols, lambdify, sympify, SympifyError
+from render_types import CameraMode
 
 
 class Mode(Enum):
@@ -180,28 +181,80 @@ class MathFunction(SceneObject):
             self.is_dirty = True
     
 class Grid(SceneObject):
-    def __init__(self, size: float = 20.0, spacing: float = 1.0):
+    def __init__(self, x_range=(-250, 250), y_range=(-250, 250), spacing=1.0):
         super().__init__(Mode=Mode.LINES)
-        self.size = size
+        self.x_range = x_range
+        self.y_range = y_range
         self.spacing = spacing
-        self.vertices = self._generate_vertices()
+        self.default_x_range = x_range
+        self.default_y_range = y_range
+        self.default_spacing = spacing
+        self.vertices = self._generate_vertices_from_ranges()
         self.ProgramID = ProgramID.GRID
+        self.is_dirty = False
 
-    def _generate_vertices(self):
+    def _generate_vertices_from_ranges(self):
         vertices = []
-        color = [0.5, 0.5, 0.5] # Grey color for grid lines
+        color = [0.5, 0.5, 0.5]  # Grey color for grid lines
 
-        # X-axis parallel lines
-        for i in np.arange(-self.size / 2, self.size / 2 + self.spacing, self.spacing):
-            vertices.extend([-self.size / 2, i, 0] + color)
-            vertices.extend([ self.size / 2, i, 0] + color)
+        start_x = self.spacing * np.floor(self.x_range[0] / self.spacing)
+        end_x = self.spacing * np.ceil(self.x_range[1] / self.spacing)
         
-        # Y-axis parallel lines
-        for i in np.arange(-self.size / 2, self.size / 2 + self.spacing, self.spacing):
-            vertices.extend([i, -self.size / 2, 0] + color)
-            vertices.extend([i,  self.size / 2, 0] + color)
+        start_y = self.spacing * np.floor(self.y_range[0] / self.spacing)
+        end_y = self.spacing * np.ceil(self.y_range[1] / self.spacing)
+        
+        # Horizontal lines
+        for i in np.arange(start_y, end_y, self.spacing):
+            vertices.extend([self.x_range[0], i, 0] + color)
+            vertices.extend([self.x_range[1], i, 0] + color)
+
+        # Vertical lines
+        for i in np.arange(start_x, end_x, self.spacing):
+            vertices.extend([i, self.y_range[0], 0] + color)
+            vertices.extend([i, self.y_range[1], 0] + color)
             
         return np.array(vertices, dtype=np.float32)
+
+    def set_ranges(self, x_range, y_range):
+        view_size = min(x_range[1] - x_range[0], y_range[1] - y_range[0])
+        
+        if view_size <= 0:
+            return
+            
+        target_spacing = view_size / 10.0
+        
+        power_of_10 = 10**np.floor(np.log10(target_spacing))
+        rescaled_spacing = target_spacing / power_of_10
+
+        if rescaled_spacing < 1.5:
+            new_spacing = 1 * power_of_10
+        elif rescaled_spacing < 3.5:
+            new_spacing = 2 * power_of_10
+        elif rescaled_spacing < 7.5:
+            new_spacing = 5 * power_of_10
+        else:
+            new_spacing = 10 * power_of_10
+            
+        if not np.isclose(self.spacing, new_spacing) or \
+           not np.allclose(self.x_range, x_range) or \
+           not np.allclose(self.y_range, y_range):
+            
+            self.spacing = new_spacing
+            self.x_range = x_range
+            self.y_range = y_range
+            
+            self.vertices = self._generate_vertices_from_ranges()
+            self.is_dirty = True
+
+    def set_to_default(self):
+        if not (np.allclose(self.x_range, self.default_x_range) and \
+                np.allclose(self.y_range, self.default_y_range) and \
+                np.isclose(self.spacing, self.default_spacing)):
+            self.x_range = self.default_x_range
+            self.y_range = self.default_y_range
+            self.spacing = self.default_spacing
+            self.vertices = self._generate_vertices_from_ranges()
+            self.is_dirty = True
 
 class LorenzAttractor(SceneObject):
     def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):

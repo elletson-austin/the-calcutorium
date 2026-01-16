@@ -5,24 +5,12 @@ from dataclasses import dataclass, field
 from PySide6.QtOpenGLWidgets import QOpenGLWidget   
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
-from scene import SceneObject, LorenzAttractor, ProgramID, Mode, MathFunction
+from scene import SceneObject, LorenzAttractor, ProgramID, Mode, MathFunction, Grid
 
 
-class Projection(Enum):
-    Perspective = auto()
-    Orthographic = auto()
+from render_types import Projection, SnapMode, CameraMode
 
-class SnapMode(Enum):
-    NONE = auto()
-    XY = auto()
-    XZ = auto()
-    YZ = auto()
-
-
-class CameraMode(Enum):
-    TwoD = auto()
-    ThreeD = auto()
-
+...
 
 @dataclass
 class InputState: # Tracks the state of the input
@@ -528,20 +516,33 @@ class RenderSpace(QOpenGLWidget):
         if width == 0 or height == 0:
             return
 
-        # Dynamically update function ranges in 2D mode
-        if self.cam.mode == CameraMode.TwoD and self.cam.snap_mode == SnapMode.XY:
-            if height > 0:
-                aspect = width / height
-                view_width = self.cam.distance * aspect
-                # Add a buffer to the range to avoid seeing the edges of the plot
-                buffer_factor = 1.05
-                x_min = self.cam.position_center[0] - (view_width / 2) * buffer_factor
-                x_max = self.cam.position_center[0] + (view_width / 2) * buffer_factor
-                new_x_range = (x_min, x_max)
+        # Dynamically update function and grid ranges in 2D XY mode
+        is_2d_xy = self.cam.mode == CameraMode.TwoD and self.cam.snap_mode == SnapMode.XY
+        
+        if is_2d_xy and height > 0:
+            aspect = width / height
+            view_height = self.cam.distance
+            view_width = self.cam.distance * aspect
+            buffer_factor = 1.05
 
-                for obj in self.scene.objects:
-                    if isinstance(obj, MathFunction):
-                        obj.set_x_range(new_x_range)
+            x_min = self.cam.position_center[0] - (view_width / 2) * buffer_factor
+            x_max = self.cam.position_center[0] + (view_width / 2) * buffer_factor
+            new_x_range = (x_min, x_max)
+
+            y_min = self.cam.position_center[1] - (view_height / 2) * buffer_factor
+            y_max = self.cam.position_center[1] + (view_height / 2) * buffer_factor
+            new_y_range = (y_min, y_max)
+
+            for obj in self.scene.objects:
+                if isinstance(obj, MathFunction):
+                    obj.set_x_range(new_x_range)
+                if isinstance(obj, Grid):
+                    obj.set_ranges(new_x_range, new_y_range)
+        else:
+            # Revert grid to default state if not in 2D XY mode
+            for obj in self.scene.objects:
+                if isinstance(obj, Grid):
+                    obj.set_to_default()
 
         # Create render objects for any new scene objects and update existing ones
         for obj in self.scene.objects:
