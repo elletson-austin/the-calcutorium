@@ -38,7 +38,7 @@ class InputState: # Tracks the state of the input
     scroll_delta: float = 0.0
 
 
-class Camera: # TODO It would make sense to have two different camera objects between 2d and 3d visualization.
+class Camera: 
     
     def __init__(self, 
                  position_center: np.ndarray = None,
@@ -579,15 +579,24 @@ class PySideRenderSpace(QOpenGLWidget):
         if self.cam.mode == CameraMode.TwoD:
             # --- Mouse Panning (2D Mode) ---
             if self.input_state.left_mouse_pressed:
-                # Adjust sensitivity based on distance (zoom level)
-                pan_speed = self.cam.distance / self.height()
-                self.cam.position_center[0] -= self.input_state.mouse_delta[0] *2
-                self.cam.position_center[1] += self.input_state.mouse_delta[1] 
+                if self.height() > 0:
+                    # Adjust sensitivity based on distance (zoom level)
+                    pan_speed = self.cam.distance / self.height()
+                    
+                    if self.cam.snap_mode == SnapMode.XY:
+                        self.cam.position_center[0] -= self.input_state.mouse_delta[0] * pan_speed
+                        self.cam.position_center[1] += self.input_state.mouse_delta[1] * pan_speed
+                    elif self.cam.snap_mode == SnapMode.XZ:
+                        self.cam.position_center[0] += self.input_state.mouse_delta[0] * pan_speed
+                        self.cam.position_center[2] += self.input_state.mouse_delta[1] * pan_speed
+                    elif self.cam.snap_mode == SnapMode.YZ:
+                        self.cam.position_center[1] += self.input_state.mouse_delta[1] * pan_speed
+                        self.cam.position_center[2] += self.input_state.mouse_delta[0] * pan_speed
         else:
             # --- Mouse Rotation (3D Mode) ---
             if self.input_state.left_mouse_pressed:
-                self.cam.rotation[0] += self.input_state.mouse_delta[1] * 2.0 # Pitch
-                self.cam.rotation[1] += self.input_state.mouse_delta[0] * 2.0 # Yaw
+                self.cam.rotation[0] += self.input_state.mouse_delta[1] # Pitch
+                self.cam.rotation[1] += self.input_state.mouse_delta[0] # Yaw
                 self.cam.rotation[0] = np.clip(self.cam.rotation[0], -89.0, 89.0) # Clamp pitch
                 self.cam.rotation[1] = self.cam.rotation[1] % 360.0 # Wrap yaw
 
@@ -659,7 +668,7 @@ class PySideRenderSpace(QOpenGLWidget):
     def mouseMoveEvent(self, event: QMouseEvent):
         """Handle mouse movement events."""
         new_pos = np.array([event.position().x(), event.position().y()], dtype=np.float32)
-        self.input_state.mouse_delta = new_pos - self.input_state.mouse_pos
+        self.input_state.mouse_delta += new_pos - self.input_state.mouse_pos
         self.input_state.mouse_pos = new_pos
 
 
