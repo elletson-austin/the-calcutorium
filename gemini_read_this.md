@@ -17,7 +17,7 @@ Project Architecture: A Model-View-Controller (MVC) Approach
        * It is "dumb" and does not contain any rendering or user interaction logic. It only manages
          the scene data.
 
-   * View (`PySideRenderSpace` class):
+   * View (`RenderSpace` class):
        * Visually represents the Scene (the Model).
        * It's a QOpenGLWidget responsible for all moderngl rendering.
        * It handles all input that happens directly within the 3D viewport, such as camera controls
@@ -25,7 +25,7 @@ Project Architecture: A Model-View-Controller (MVC) Approach
 
    * Controller (`MainWindow` class):
        * The central orchestrator of the application.
-       * It creates and owns all major components: the Scene (Model), the PySideRenderSpace (View),
+       * It creates and owns all major components: the Scene (Model), the RenderSpace (View),
          and all other GUI elements (buttons, sliders, input fields).
        * It connects the View to the Model (e.g., view.set_scene(model)).
        * It handles all application-level user interaction. For example, when a "Plot" button is
@@ -36,12 +36,9 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   adding a UI element to the MainWindow and writing a corresponding method to modify the Scene,
   without needing to touch the complex rendering code in the View.
 
-TODO improving parsing (dont want np.sin(x) want sin(x)).
-TODO add functions in terminal style widget.
-TODO add desmos style grid that is slightly see through in 3d but opaque in 2d
+
 TODO allow the setting of x0,x1,y0,y1 manually while in 2d to change aspect ratio.
 TODO add more particle sims
 TODO add polar and implicit function compatibility
 TODO add the ability to graph functions like f(x,y) = some z val and it looks like a mesh
-TODO add way to tell f(x)'s apart. (f-sub1, fsub2) using some kind of subscript. or allow custom names for functions.
-TODO when in 2d mode it takes the ranges and evaluates the function so it doesnt abruptly stop. (updates vertices)
+

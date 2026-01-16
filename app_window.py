@@ -6,7 +6,7 @@ import sys
 
 # Import our custom components
 from scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
-from rendering import PySideRenderSpace, CameraMode, SnapMode
+from rendering import RenderSpace, CameraMode, SnapMode
 from input_widget import InputWidget
 from function_editor_widget import FunctionEditorWidget
 from output_widget import OutputWidget
@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         self.scene.objects.append(grid)
 
         # Create the View (PySideRenderSpace)
-        self.render_widget = PySideRenderSpace()
+        self.render_widget = RenderSpace()
         
         # Connect the View to the Model
         self.render_widget.set_scene(self.scene)
@@ -98,24 +98,39 @@ class MainWindow(QMainWindow):
 
 
     def update_function_editors(self):
-        # Get current functions from the scene
-        scene_funcs = {obj for obj in self.scene.objects if isinstance(obj, MathFunction)}
+        # Get an ordered list of MathFunction objects from the scene
+        scene_funcs = [obj for obj in self.scene.objects if isinstance(obj, MathFunction)]
         
-        # Remove widgets for functions that are no longer in the scene
-        for func_obj, widget in list(self.function_editors.items()):
+        # Sync self.function_editors with scene_funcs
+        # Remove editors for functions no longer in the scene
+        for func_obj in list(self.function_editors.keys()):
             if func_obj not in scene_funcs:
+                widget = self.function_editors.pop(func_obj)
                 widget.setParent(None)
                 widget.deleteLater()
-                del self.function_editors[func_obj]
 
-        # Add widgets for new functions
+        # Add new editors for functions new to the scene
         for func_obj in scene_funcs:
             if func_obj not in self.function_editors:
-                editor_widget = FunctionEditorWidget(func_obj)
+                # The subscript passed here is a placeholder, it will be correctly set below
+                editor_widget = FunctionEditorWidget(func_obj, 0)
                 editor_widget.equation_changed.connect(self.on_equation_changed)
-                # Insert new editors at the top
-                self.function_editors_layout.insertWidget(0, editor_widget)
                 self.function_editors[func_obj] = editor_widget
+
+        # --- Rebuild layout and update subscripts ---
+        
+        # Detach all editor widgets from the layout
+        for widget in self.function_editors.values():
+            widget.setParent(None)
+
+        # Re-add widgets in the correct order with updated subscripts.
+        # Newest functions are at the end of scene_funcs, and should appear at the top of the UI.
+        for i, func_obj in enumerate(reversed(scene_funcs)):
+            subscript = len(scene_funcs) - i
+            widget = self.function_editors[func_obj]
+            widget.set_subscript(subscript)
+            # Insert at the top of the layout to have newest functions on top
+            self.function_editors_layout.insertWidget(0, widget)
 
     def on_equation_changed(self, math_function: MathFunction, new_equation: str):
         self.output_widget.write(f"Equation changed for '{math_function.name}': '{new_equation}'")        

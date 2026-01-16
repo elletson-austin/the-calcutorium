@@ -470,7 +470,7 @@ class Renderer:
             ro.vao.render(mode=m)
 
 
-class PySideRenderSpace(QOpenGLWidget):
+class RenderSpace(QOpenGLWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.cam: Camera = Camera()
@@ -534,7 +534,7 @@ class PySideRenderSpace(QOpenGLWidget):
                 aspect = width / height
                 view_width = self.cam.distance * aspect
                 # Add a buffer to the range to avoid seeing the edges of the plot
-                buffer_factor = 1.1 
+                buffer_factor = 1.05
                 x_min = self.cam.position_center[0] - (view_width / 2) * buffer_factor
                 x_max = self.cam.position_center[0] + (view_width / 2) * buffer_factor
                 new_x_range = (x_min, x_max)

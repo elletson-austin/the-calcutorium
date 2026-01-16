@@ -92,7 +92,7 @@ class Axes(SceneObject):
 
 class MathFunction(SceneObject):
 
-    def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 100, output_widget=None):
+    def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 1000, output_widget=None):
         """
         Parses a string to create a plottable math function.
         """
