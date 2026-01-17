@@ -92,102 +92,227 @@ class Axes(SceneObject):
         self.ProgramID = ProgramID.BASIC_3D
 
 class MathFunction(SceneObject):
-
-    def __init__(self, equation_str: str, x_range: tuple = (-10, 10), points: int = 1000, output_widget=None):
-        """
-        Parses a string to create a plottable math function.
-        """
+    def __init__(self, equation_str: str, points: int = 100, output_widget=None):
         super().__init__(Mode=Mode.LINE_STRIP)
         self.equation_str = equation_str
-        self.x_range = x_range
         self.points = points
         self.output_widget = output_widget
-        self._x_symbol = symbols('x') # Define the symbol 'x' for sympy
+        
+        self.domain_vars = []
+        self.output_var = None
         self._sympy_expr = None
         self._callable_func = None
-        self._parse_and_lambdify() # Parse and lambdify the initial equation
-        self.vertices = self._generate_vertices()
-        self.mode = Mode.LINE_STRIP
+        self.num_domain_vars = 0
+
+        self.current_plane = None
+        self.current_domain_range = None
+        
+        self._parse_and_lambdify()
+        
+        self.vertices = np.array([], dtype=np.float32)
+        self.is_dirty = True
+
+        if self.num_domain_vars == 1:
+            self.Mode = Mode.LINE_STRIP
+            # Default to XY plane visualization in 3D
+            indep_var_str = str(self.domain_vars[0])
+            output_var_str = str(self.output_var)
+
+            # Determine default indep_axis, output_axis, and const_axis
+            if indep_var_str == 'x':
+                indep_axis = 'x'
+                output_axis = 'y'
+                const_axis = 'z'
+            elif indep_var_str == 'y':
+                indep_axis = 'y'
+                output_axis = 'x' # Or 'z', depending on preferred default
+                const_axis = 'z'  # Or 'x'
+            elif indep_var_str == 'z':
+                indep_axis = 'z'
+                output_axis = 'x' # Or 'y'
+                const_axis = 'y'  # Or 'x'
+            else: # For arbitrary variable names, map to x, y, z
+                indep_axis = 'x'
+                output_axis = 'y'
+                const_axis = 'z'
+                
+            self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_axis, output_axis=output_axis, const_axis=const_axis)
+        elif self.num_domain_vars == 2:
+            self.Mode = Mode.TRIANGLES
+            # For 3D plots, we generate vertices once with a fixed range
+            self._generate_surface_vertices()
+        
         self.ProgramID = ProgramID.BASIC_3D
-        self.is_dirty = False
 
     def _parse_and_lambdify(self):
-        """
-        Parses the equation string into a sympy expression and then lambdifies it.
-        """
         if not self.equation_str.strip():
-            self._sympy_expr = None
-            self._callable_func = None
+            # Handle empty equation string
             return
 
         try:
-            # Use sympify to parse the string into a sympy expression
-            # Use evaluate=False to prevent immediate evaluation of expressions like sin(pi/2)
-            self._sympy_expr = sympify(self.equation_str, evaluate=False) 
-            # Lambdify the sympy expression into a callable function for numerical evaluation
-            self._callable_func = lambdify(self._x_symbol, self._sympy_expr, 'numpy')
-        except SympifyError as e:
-            if self.output_widget:
-                self.output_widget.append_text(f"MathFunction: Error parsing equation '{self.equation_str}': {e}")
-            else:
-                print(f"MathFunction: Error parsing equation '{self.equation_str}': {e}")
-            self._sympy_expr = None
-            self._callable_func = None
-        except Exception as e:
-            if self.output_widget:
-                self.output_widget.append_text(f"MathFunction: Unexpected error during parsing or lambdifying '{self.equation_str}': {e}")
-            else:
-                print(f"MathFunction: Unexpected error during parsing or lambdifying '{self.equation_str}': {e}")
-            self._sympy_expr = None
-            self._callable_func = None
+            output_var_str = 'y'
+            expr_str = self.equation_str
+
+            if '=' in self.equation_str:
+                parts = self.equation_str.split('=', 1)
+                output_var_str = parts[0].strip()
+                expr_str = parts[1].strip()
+
+            self._sympy_expr = sympify(expr_str, evaluate=False)
+            self.output_var = symbols(output_var_str)
+            
+            self.domain_vars = sorted(list(self._sympy_expr.free_symbols), key=lambda s: s.name)
+            self.num_domain_vars = len(self.domain_vars)
+            
+            if self.num_domain_vars > 2:
+                raise ValueError("Functions with more than two independent variables are not supported.")
+            
+            if self.num_domain_vars > 0:
+                self._callable_func = lambdify(self.domain_vars, self._sympy_expr, 'numpy')
+
+        except (SympifyError, ValueError, TypeError) as e:
+            # Re-raise as a new exception to be caught by the UI
+            raise ValueError(f"Error processing equation: {e}") from e
+
 
     def to_dict(self):
         d = super().to_dict()
         d['equation'] = self.equation_str
         return d
 
-    def _generate_vertices(self):
+    def _generate_line_vertices(self, domain_range: tuple, indep_axis: str, output_axis: str, const_axis: str = None):
+        """Generates vertices for a 1-variable function."""
         vertices = []
-        if not self.equation_str.strip() or self._callable_func is None:
-            if self.output_widget and not self.equation_str.strip():
-                self.output_widget.append_text("MathFunction: Equation string is empty, cannot generate vertices.")
-            return np.array([], dtype=np.float32)
+        if self._callable_func is None or self.num_domain_vars != 1:
+            self.vertices = np.array([], dtype=np.float32)
+            return
 
-        x_values = np.linspace(self.x_range[0], self.x_range[1], self.points)
-        for x_val in x_values:
+        domain_values = np.linspace(domain_range[0], domain_range[1], self.points)
+        
+        indep_var_str = str(self.domain_vars[0])
+        
+        for val in domain_values:
             try:
-                y = self._callable_func(x_val)
-                z = 0  # For now, plot in the XY plane
-                r, g, b = 1, 1, 1  # White color for the plot
-                vertices.extend([x_val, y, z, r, g, b])
-            except Exception as e:
-                if self.output_widget:
-                    self.output_widget.append_text(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x_val}: {e}")
-                else:
-                    print(f"MathFunction: Could not evaluate equation '{self.equation_str}' at x={x_val}: {e}")
-        return np.array(vertices, dtype=np.float32)
-
-    def regenerate(self, new_equation_str: str):
-        self.equation_str = new_equation_str
-        self._parse_and_lambdify() # Re-parse and re-lambdify the new equation
-        self.vertices = self._generate_vertices()
+                out_val = self._callable_func(val)
+                point = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+                
+                point[indep_axis] = val
+                point[output_axis] = out_val
+                
+                vertices.extend([point['x'], point['y'], point['z'], 1, 1, 1]) # White color
+            except Exception:
+                pass 
+        
+        self.vertices = np.array(vertices, dtype=np.float32)
         self.is_dirty = True
 
-    def set_x_range(self, x_range: tuple):
-        # Add a small tolerance to avoid regenerating on tiny pans
-        if not np.allclose(self.x_range, x_range, atol=1e-3):
-            self.x_range = x_range
-            self.vertices = self._generate_vertices()
-            self.is_dirty = True
+    def _generate_surface_vertices(self, x_range=(-10, 10), y_range=(-10, 10)):
+        """Generates a triangle mesh for a 2-variable function."""
+        if self._callable_func is None or self.num_domain_vars != 2:
+            self.vertices = np.array([], dtype=np.float32)
+            return
+
+        # Ensure domain variables are what we expect for a surface, e.g. f(x,y)
+        var_names = {str(v) for v in self.domain_vars}
+        if var_names != {'x', 'y'}:
+             # This could be extended to handle other planes, e.g. f(x,z)
+            return
+
+        x_vals = np.linspace(x_range[0], x_range[1], self.points)
+        y_vals = np.linspace(y_range[0], y_range[1], self.points)
+        grid_x, grid_y = np.meshgrid(x_vals, y_vals)
+        
+        try:
+            grid_z = self._callable_func(grid_x, grid_y)
+        except Exception as e:
+            print(f"Error evaluating surface function: {e}")
+            return
+
+        vertices = []
+        color = [1, 1, 1] # White
+        # Create triangles from the grid
+        for i in range(self.points - 1):
+            for j in range(self.points - 1):
+                # Points of a quad
+                p1 = [grid_x[i, j],     grid_y[i, j],     grid_z[i, j]]
+                p2 = [grid_x[i, j + 1],   grid_y[i, j + 1],   grid_z[i, j + 1]]
+                p3 = [grid_x[i + 1, j],   grid_y[i + 1, j],   grid_z[i + 1, j]]
+                p4 = [grid_x[i + 1, j + 1], grid_y[i + 1, j + 1], grid_z[i + 1, j + 1]]
+
+                # Triangle 1 (p1, p2, p3)
+                vertices.extend(p1 + color)
+                vertices.extend(p2 + color)
+                vertices.extend(p3 + color)
+                
+                # Triangle 2 (p2, p4, p3)
+                vertices.extend(p2 + color)
+                vertices.extend(p4 + color)
+                vertices.extend(p3 + color)
+
+        self.vertices = np.array(vertices, dtype=np.float32)
+        self.is_dirty = True
+
+
+    def regenerate(self, new_equation_str: str):
+        self.__init__(new_equation_str, self.points, self.output_widget)
+        self.name = new_equation_str
+
+
+    def update_for_plane(self, plane: str, h_range: tuple, v_range: tuple):
+        """Called by the renderer to update the function for the current 2D view."""
+        if self.num_domain_vars != 1:
+            if self.vertices.size > 0 and self.num_domain_vars > 1:
+                pass # 3D surfaces are always visible
+            else:
+                self.vertices = np.array([], dtype=np.float32)
+                self.is_dirty = True
+            return
+
+        indep_var_str = str(self.domain_vars[0])
+        output_var_str = str(self.output_var)
+
+        # Define the axis mapping for each plane: (horizontal, vertical, constant)
+        plane_axis_map = {
+            'xy': ('x', 'y', 'z'),
+            'xz': ('x', 'z', 'y'),
+            'yz': ('z', 'y', 'x')
+        }
+        
+        h_axis, v_axis, const_axis = plane_axis_map.get(plane, ('x', 'y', 'z')) # Default to xy
+
+        # Determine which actual axis (h_axis or v_axis) the independent variable maps to
+        if indep_var_str == h_axis:
+            plot_indep_axis = h_axis
+            plot_output_axis = v_axis
+            domain_range = h_range
+        elif indep_var_str == v_axis:
+            plot_indep_axis = v_axis
+            plot_output_axis = h_axis
+            domain_range = v_range
+        else:
+            # Independent variable is not on this plane, so don't draw it
+            if self.vertices.size > 0:
+                self.vertices = np.array([], dtype=np.float32)
+                self.is_dirty = True
+            return
+
+        if self.current_plane != plane or \
+           self.current_domain_range is None or \
+           not np.allclose(self.current_domain_range, domain_range, atol=1e-2):
+            
+            self.current_plane = plane
+            self.current_domain_range = domain_range
+            self._generate_line_vertices(domain_range, plot_indep_axis, plot_output_axis, const_axis)
     
 class Grid(SceneObject):
-    def __init__(self, x_range=(-250, 250), y_range=(-250, 250), spacing=1.0):
+    def __init__(self, h_range=(-250, 250), v_range=(-250, 250), spacing=1.0, plane='xy'):
         super().__init__(Mode=Mode.LINES)
-        self.x_range = x_range
-        self.y_range = y_range
+        self.h_range = h_range
+        self.v_range = v_range
         self.spacing = spacing
-        self.default_x_range = x_range
-        self.default_y_range = y_range
+        self.plane = plane
+        self.default_h_range = h_range
+        self.default_v_range = v_range
         self.default_spacing = spacing
         self.vertices = self._generate_vertices_from_ranges()
         self.ProgramID = ProgramID.GRID
@@ -197,26 +322,45 @@ class Grid(SceneObject):
         vertices = []
         color = [0.5, 0.5, 0.5]  # Grey color for grid lines
 
-        start_x = self.spacing * np.floor(self.x_range[0] / self.spacing)
-        end_x = self.spacing * np.ceil(self.x_range[1] / self.spacing)
+        start_h = self.spacing * np.floor(self.h_range[0] / self.spacing)
+        end_h = self.spacing * np.ceil(self.h_range[1] / self.spacing)
         
-        start_y = self.spacing * np.floor(self.y_range[0] / self.spacing)
-        end_y = self.spacing * np.ceil(self.y_range[1] / self.spacing)
-        
-        # Horizontal lines
-        for i in np.arange(start_y, end_y, self.spacing):
-            vertices.extend([self.x_range[0], i, 0] + color)
-            vertices.extend([self.x_range[1], i, 0] + color)
+        start_v = self.spacing * np.floor(self.v_range[0] / self.spacing)
+        end_v = self.spacing * np.ceil(self.v_range[1] / self.spacing)
 
-        # Vertical lines
-        for i in np.arange(start_x, end_x, self.spacing):
-            vertices.extend([i, self.y_range[0], 0] + color)
-            vertices.extend([i, self.y_range[1], 0] + color)
+        axis_map = {
+            'xy': (0, 1, 2),
+            'xz': (0, 2, 1),
+            'yz': (2, 1, 0),
+        }
+        h_idx, v_idx, const_idx = axis_map.get(self.plane, (0, 1, 2))
+        
+        # Lines along the horizontal axis
+        for i in np.arange(start_v, end_v + self.spacing, self.spacing):
+            p1 = [0, 0, 0]
+            p2 = [0, 0, 0]
+            p1[h_idx] = self.h_range[0]
+            p2[h_idx] = self.h_range[1]
+            p1[v_idx] = i
+            p2[v_idx] = i
+            vertices.extend(p1 + color)
+            vertices.extend(p2 + color)
+
+        # Lines along the vertical axis
+        for i in np.arange(start_h, end_h + self.spacing, self.spacing):
+            p1 = [0, 0, 0]
+            p2 = [0, 0, 0]
+            p1[v_idx] = self.v_range[0]
+            p2[v_idx] = self.v_range[1]
+            p1[h_idx] = i
+            p2[h_idx] = i
+            vertices.extend(p1 + color)
+            vertices.extend(p2 + color)
             
         return np.array(vertices, dtype=np.float32)
 
-    def set_ranges(self, x_range, y_range):
-        view_size = min(x_range[1] - x_range[0], y_range[1] - y_range[0])
+    def set_ranges(self, h_range, v_range, plane='xy'):
+        view_size = min(h_range[1] - h_range[0], v_range[1] - v_range[0])
         
         if view_size <= 0:
             return
@@ -236,23 +380,27 @@ class Grid(SceneObject):
             new_spacing = 10 * power_of_10
             
         if not np.isclose(self.spacing, new_spacing) or \
-           not np.allclose(self.x_range, x_range) or \
-           not np.allclose(self.y_range, y_range):
+           not np.allclose(self.h_range, h_range) or \
+           not np.allclose(self.v_range, v_range) or \
+           self.plane != plane:
             
             self.spacing = new_spacing
-            self.x_range = x_range
-            self.y_range = y_range
+            self.h_range = h_range
+            self.v_range = v_range
+            self.plane = plane
             
             self.vertices = self._generate_vertices_from_ranges()
             self.is_dirty = True
 
     def set_to_default(self):
-        if not (np.allclose(self.x_range, self.default_x_range) and \
-                np.allclose(self.y_range, self.default_y_range) and \
-                np.isclose(self.spacing, self.default_spacing)):
-            self.x_range = self.default_x_range
-            self.y_range = self.default_y_range
+        if not (np.allclose(self.h_range, self.default_h_range) and \
+                np.allclose(self.v_range, self.default_v_range) and \
+                np.isclose(self.spacing, self.default_spacing) and \
+                self.plane != 'xy'):
+            self.h_range = self.default_h_range
+            self.v_range = self.default_v_range
             self.spacing = self.default_spacing
+            self.plane = 'xy'
             self.vertices = self._generate_vertices_from_ranges()
             self.is_dirty = True
 

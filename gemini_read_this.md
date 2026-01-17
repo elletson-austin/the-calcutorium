@@ -36,9 +36,19 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   adding a UI element to the MainWindow and writing a corresponding method to modify the Scene,
   without needing to touch the complex rendering code in the View.
 
+  Dont paint yourself into a corner. keep everything as applical to the widest array of uses.
+  Have an extremely agnostic and unopinionated approach
+  
+TODO add which variables are in the domain and the output.
 
-TODO allow the setting of x0,x1,y0,y1 manually while in 2d to change aspect ratio.
 TODO add more particle sims
 TODO add polar and implicit function compatibility
 TODO add the ability to graph functions like f(x,y) = some z val and it looks like a mesh
-
+TODO Generalize MathFunction plotting for different 2D planes.
+    - Currently, `MathFunction` only plots `y = f(x)` on the XY plane.
+    - Extend this to plot functions with a single independent variable (e.g., `f(x)`, `f(y)`) on any 2D plane where that variable is an axis.
+    - For example, `f(x)` should appear on the XY and XZ planes, but not the YZ plane.
+    - This involves:
+        1. In `scene.py`, modifying `MathFunction` to auto-detect its independent variable.
+        2. Modifying its vertex generation to place points correctly based on the current 2D plane (`xy`, `xz`, `yz`).
+        3. In `rendering.py`, modifying `RenderSpace.paintGL` to pass the plane info and the correct range to the `MathFunction` object.

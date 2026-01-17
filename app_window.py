@@ -50,6 +50,9 @@ class MainWindow(QMainWindow):
         self.event_filter = TabKeyEventFilter(self.render_widget)
         QApplication.instance().installEventFilter(self.event_filter)
 
+        # A dictionary to map MathFunction objects to their editor widgets
+        self.function_editors = {}
+
         # --- Layout Setup ---
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -94,8 +97,11 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(left_panel)
         main_layout.addWidget(self.render_widget, 1)
 
-        self.function_editors = {} # {MathFunction: FunctionEditorWidget}
+        # Connect render_widget signal
+        self.render_widget.manual_range_cleared.connect(self._handle_manual_range_cleared)
 
+    def _handle_manual_range_cleared(self):
+        self.output_widget.write("Manual range cleared due to user interaction. Returning to automatic ranging.")
 
     def update_function_editors(self):
         # Get an ordered list of MathFunction objects from the scene
@@ -170,6 +176,8 @@ class MainWindow(QMainWindow):
   view 2d xy - Switch to 2D view on the XY plane
   view 2d xz - Switch to 2D view on the XZ plane
   view 2d yz - Switch to 2D view on the YZ plane
+  range <x|y|z> <min> <max> - Manually set the visible range for an axis (e.g., 'range x -10 10')
+  range auto - Reset all axes to automatic ranging
   add lorenz - Add a Lorenz attractor to the scene
   add func \"<function_string>\" - Add a mathematical function to the scene (e.g., 'add func \"x**2\"')
   remove func \"<function_string>\" - Remove a mathematical function from the scene (e.g., 'remove func \"x**2\"')"""
@@ -177,8 +185,8 @@ class MainWindow(QMainWindow):
             return
 
         if command == "clear":
-            # Remove all objects except for the axes
-            self.scene.objects = [obj for obj in self.scene.objects if getattr(obj, 'name', '') == 'axes']
+            # Remove all objects except for the axes and grid
+            self.scene.objects = [obj for obj in self.scene.objects if getattr(obj, 'name', '') in ['axes', 'grid']]
             self.update_function_editors()
             self.output_widget.write("Scene cleared.")
             return
@@ -207,6 +215,84 @@ class MainWindow(QMainWindow):
 
         # Handle commands with multiple parts
         action = command_parts[0].lower()
+
+        if action == "range":
+            if self.render_widget.cam.mode != CameraMode.TwoD:
+                self.output_widget.write_error("The 'range' command is only available in 2D view modes. Use 'view 2d ...' first.")
+                return
+
+            if len(command_parts) == 2 and command_parts[1].lower() == 'auto':
+                self.render_widget.manual_ranges.clear()
+                self.output_widget.write("Switched to automatic ranging.")
+                return
+
+            if len(command_parts) != 4:
+                self.output_widget.write_error("Invalid 'range' command. Use: 'range <x|y|z> <min> <max>' or 'range auto'.")
+                return
+            
+            axis_str = command_parts[1].lower()
+            if axis_str not in ['x', 'y', 'z']:
+                self.output_widget.write_error(f"Invalid axis '{axis_str}'. Use 'x', 'y', or 'z'.")
+                return
+
+            try:
+                min_val, max_val = float(command_parts[2]), float(command_parts[3])
+            except ValueError:
+                self.output_widget.write_error("Invalid range values. Min and max must be numbers.")
+                return
+            
+            if min_val >= max_val:
+                self.output_widget.write_error("Min range value must be less than max value.")
+                return
+
+            self.render_widget.manual_ranges[axis_str] = (min_val, max_val)
+            self.output_widget.write(f"Set manual range for {axis_str}-axis to ({min_val}, {max_val}).")
+
+            # Adjust camera center and distance if both relevant ranges are now manually set
+            current_snap_mode = self.render_widget.cam.snap_mode
+            h_axis, v_axis = None, None
+
+            if current_snap_mode == SnapMode.XY:
+                h_axis, v_axis = 'x', 'y'
+            elif current_snap_mode == SnapMode.XZ:
+                h_axis, v_axis = 'x', 'z'
+            elif current_snap_mode == SnapMode.YZ:
+                h_axis, v_axis = 'z', 'y' # Z is horizontal, Y is vertical
+
+            if h_axis and v_axis and h_axis in self.render_widget.manual_ranges and v_axis in self.render_widget.manual_ranges:
+                h_range = self.render_widget.manual_ranges[h_axis]
+                v_range = self.render_widget.manual_ranges[v_axis]
+
+                # Update camera center
+                axis_map = {'x': 0, 'y': 1, 'z': 2}
+                self.render_widget.cam.position_center[axis_map[h_axis]] = (h_range[0] + h_range[1]) / 2
+                self.render_widget.cam.position_center[axis_map[v_axis]] = (v_range[0] + v_range[1]) / 2
+                
+                range_width = h_range[1] - h_range[0]
+                range_height = v_range[1] - v_range[0]
+                
+                if range_width <= 0 or range_height <= 0:
+                    self.output_widget.write_error("Calculated range width or height is non-positive. Cannot adjust camera.")
+                    return
+                
+                range_aspect = range_width / range_height
+                
+                width, height = self.render_widget.width(), self.render_widget.height()
+                if height == 0:
+                    self.output_widget.write_error("Render widget height is zero. Cannot adjust camera aspect.")
+                    return
+                window_aspect = width / height
+                
+                # Adjust camera distance to fit the range within the window, maintaining chosen aspect
+                if window_aspect > range_aspect:
+                    # Window is wider than the desired range, fit to height
+                    self.render_widget.cam.distance = range_height
+                else:
+                    # Window is taller or equal aspect, fit to width
+                    self.render_widget.cam.distance = range_width / window_aspect
+                
+                self.output_widget.write(f"Camera adjusted to fit manual ranges for {h_axis}/{v_axis} plane.")
+            return
 
         if action == "save":
             if len(command_parts) < 2:
@@ -323,16 +409,20 @@ class MainWindow(QMainWindow):
 
                 value_string = command_parts[2]
 
-                func_found = False
-                for obj in list(self.scene.objects): # Iterate over a copy to allow modification
+                func_to_remove = None
+                for obj in self.scene.objects:
                     if isinstance(obj, MathFunction) and obj.equation_str == value_string:
-                        self.scene.objects.remove(obj)
-                        self.update_function_editors()
-                        self.output_widget.write(f"Removed function: {value_string}")
-                        func_found = True
+                        func_to_remove = obj
                         break
-                self.output_widget.write(f"Function '{value_string}' not found in the scene.")
+                
+                if func_to_remove:
+                    self.scene.objects.remove(func_to_remove)
+                    self.update_function_editors()
+                    self.output_widget.write(f"Removed function: {value_string}")
+                else:
+                    self.output_widget.write(f"Function '{value_string}' not found in the scene.")
                 return
 
         self.output_widget.write(f"Unknown or invalid command: '{command}'. Type 'help' for available commands.")
         return
+

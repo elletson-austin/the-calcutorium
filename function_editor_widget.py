@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QLabel
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QLabel, QHBoxLayout
 from PySide6.QtCore import Signal, Qt
 from scene import MathFunction
 
@@ -9,22 +9,32 @@ class FunctionEditorWidget(QWidget):
         super().__init__(parent)
         self.math_function = math_function
         
-        self.layout = QVBoxLayout(self)
+        # A horizontal layout for the label and the equation input
+        self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        
+        self.layout.setSpacing(5)
+
         self.label = QLabel()
         self.set_subscript(subscript)
+        self.layout.addWidget(self.label)
+
         self.equation_input = QLineEdit()
         self.equation_input.setText(self.math_function.equation_str)
         self.equation_input.returnPressed.connect(self.on_equation_changed)
         
-        self.layout.addWidget(self.label)
         self.layout.addWidget(self.equation_input)
 
     def set_subscript(self, subscript: int):
-        self.label.setText(f"f<sub>{subscript}</sub>(x) = ")
+        self.label.setText(f"f<sub>{subscript}</sub> =")
 
     def on_equation_changed(self):
         new_equation = self.equation_input.text()
         if new_equation != self.math_function.equation_str:
             self.equation_changed.emit(self.math_function, new_equation)
+
+    def update_equation_text(self):
+        """
+        Public method to allow MainWindow to update the text if the
+        function is changed programmatically elsewhere.
+        """
+        self.equation_input.setText(self.math_function.equation_str)
