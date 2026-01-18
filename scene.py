@@ -16,6 +16,7 @@ class ProgramID(Enum):
     BASIC_3D = auto()
     LORENZ_ATTRACTOR = auto()
     GRID = auto()
+    SURFACE = auto()
 
 
 
@@ -139,10 +140,11 @@ class MathFunction(SceneObject):
             self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_axis, output_axis=output_axis, const_axis=const_axis)
         elif self.num_domain_vars == 2:
             self.Mode = Mode.TRIANGLES
+            self.ProgramID = ProgramID.SURFACE
             # For 3D plots, we generate vertices once with a fixed range
             self._generate_surface_vertices()
-        
-        self.ProgramID = ProgramID.BASIC_3D
+        else:
+            self.ProgramID = ProgramID.BASIC_3D
 
     def _parse_and_lambdify(self):
         if not self.equation_str.strip():
@@ -212,10 +214,8 @@ class MathFunction(SceneObject):
             self.vertices = np.array([], dtype=np.float32)
             return
 
-        # Ensure domain variables are what we expect for a surface, e.g. f(x,y)
         var_names = {str(v) for v in self.domain_vars}
         if var_names != {'x', 'y'}:
-             # This could be extended to handle other planes, e.g. f(x,z)
             return
 
         x_vals = np.linspace(x_range[0], x_range[1], self.points)
@@ -225,36 +225,48 @@ class MathFunction(SceneObject):
         try:
             grid_z = self._callable_func(grid_x, grid_y)
         except Exception as e:
-            print(f"Error evaluating surface function: {e}")
+            if self.output_widget:
+                self.output_widget.write_error(f"Error evaluating surface function: {e}")
+            else:
+                print(f"Error evaluating surface function: {e}")
             return
 
         vertices = []
-        color = [1, 1, 1] # White
-        # Create triangles from the grid
+        color = [1.0, 0.2, 0.2] 
+
         for i in range(self.points - 1):
             for j in range(self.points - 1):
-                # Points of a quad
-                p1 = [grid_x[i, j],     grid_y[i, j],     grid_z[i, j]]
-                p2 = [grid_x[i, j + 1],   grid_y[i, j + 1],   grid_z[i, j + 1]]
-                p3 = [grid_x[i + 1, j],   grid_y[i + 1, j],   grid_z[i + 1, j]]
-                p4 = [grid_x[i + 1, j + 1], grid_y[i + 1, j + 1], grid_z[i + 1, j + 1]]
+                p1 = np.array([grid_x[i, j], grid_y[i, j], grid_z[i, j]])
+                p2 = np.array([grid_x[i, j + 1], grid_y[i, j + 1], grid_z[i, j + 1]])
+                p3 = np.array([grid_x[i + 1, j], grid_y[i + 1, j], grid_z[i + 1, j]])
+                p4 = np.array([grid_x[i + 1, j + 1], grid_y[i + 1, j + 1], grid_z[i + 1, j + 1]])
 
-                # Triangle 1 (p1, p2, p3)
-                vertices.extend(p1 + color)
-                vertices.extend(p2 + color)
-                vertices.extend(p3 + color)
-                
-                # Triangle 2 (p2, p4, p3)
-                vertices.extend(p2 + color)
-                vertices.extend(p4 + color)
-                vertices.extend(p3 + color)
+                # Triangle 1 (p1, p3, p2)
+                v1 = p3 - p1
+                v2 = p2 - p1
+                n1 = np.cross(v1, v2)
+                n1 /= np.linalg.norm(n1)
+
+                vertices.extend([*p1, *n1, *color])
+                vertices.extend([*p3, *n1, *color])
+                vertices.extend([*p2, *n1, *color])
+
+                # Triangle 2 (p2, p3, p4)
+                v1 = p3 - p2
+                v2 = p4 - p2
+                n2 = np.cross(v1, v2)
+                n2 /= np.linalg.norm(n2)
+
+                vertices.extend([*p2, *n2, *color])
+                vertices.extend([*p3, *n2, *color])
+                vertices.extend([*p4, *n2, *color])
 
         self.vertices = np.array(vertices, dtype=np.float32)
         self.is_dirty = True
 
-
     def regenerate(self, new_equation_str: str):
-        self.__init__(new_equation_str, self.points, self.output_widget)
+        # Re-initialize the object
+        self.__init__(new_equation_str, points=self.points, output_widget=self.output_widget)
         self.name = new_equation_str
 
 

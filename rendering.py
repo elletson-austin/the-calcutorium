@@ -243,6 +243,66 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         }
         """
         return VERTEX_SOURCE, FRAGMENT_SOURCE
+
+    def surface_src(self):
+        VERTEX_SHADER = """
+            #version 330
+
+            layout (location = 0) in vec3 in_position;
+            layout (location = 1) in vec3 in_normal;
+            layout (location = 2) in vec3 in_color;
+
+            uniform mat4 u_view;
+            uniform mat4 u_proj;
+            uniform mat4 u_model;
+
+            out vec3 v_normal;
+            out vec3 v_pos;
+            out vec3 v_color;
+
+            void main() {
+                gl_Position = u_proj * u_view * u_model * vec4(in_position, 1.0);
+                v_pos = (u_model * vec4(in_position, 1.0)).xyz;
+                v_normal = mat3(transpose(inverse(u_model))) * in_normal;
+                v_color = in_color;
+            }
+        """
+        FRAGMENT_SHADER = """
+            #version 330
+
+            in vec3 v_normal;
+            in vec3 v_pos;
+            in vec3 v_color;
+
+            out vec4 fragColor;
+
+            uniform vec3 u_light_pos;
+            uniform vec3 u_view_pos;
+
+            void main() {
+                vec3 norm = normalize(v_normal);
+                vec3 light_dir = normalize(u_light_pos - v_pos);
+                
+                // Ambient
+                float ambient_strength = 0.2;
+                vec3 ambient = ambient_strength * vec3(1.0, 1.0, 1.0);
+                
+                // Diffuse
+                float diff = max(dot(norm, light_dir), 0.0);
+                vec3 diffuse = diff * vec3(1.0, 1.0, 1.0);
+                
+                // Specular
+                float specular_strength = 0.4;
+                vec3 view_dir = normalize(u_view_pos - v_pos);
+                vec3 reflect_dir = reflect(-light_dir, norm);
+                float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
+                vec3 specular = specular_strength * spec * vec3(1.0, 1.0, 1.0);
+                
+                vec3 result = (ambient + diffuse + specular) * v_color;
+                fragColor = vec4(result, 1.0);
+            }
+        """
+        return VERTEX_SHADER, FRAGMENT_SHADER
     
     def lorenz_attractor_src(self):
         VERTEX_SHADER = """
@@ -336,6 +396,8 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.lorenz_attractor_src()
         elif program_id == ProgramID.GRID:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.grid_src()
+        elif program_id == ProgramID.SURFACE:
+            VERTEX_SOURCE, FRAGMENT_SOURCE = self.surface_src()
         else:
             print('no valid shader source code available') 
             return 
@@ -379,46 +441,49 @@ class Renderer:
     
     def create_render_object(self, obj: SceneObject) -> RenderObject:
         program = self.program_manager.build_program(obj.ProgramID)
-        #mode
-        if isinstance(obj, LorenzAttractor):
+        
+        if obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
             vbo = self.ctx.buffer(obj.vertices.tobytes())
-            vao = self.ctx.vertex_array(
-                program,
-                [(vbo, "4f", "in_position")]
-            )
+            vao = self.ctx.vertex_array(program, [(vbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
-            compute_shader['sigma'] = obj.sigma
-            compute_shader['rho'] = obj.rho
-            compute_shader['beta'] = obj.beta
-            compute_shader['dt'] = obj.dt
-            compute_shader['steps'] = obj.steps
-
+            # ... (uniform setup for compute shader)
             return RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
                 vbo=vbo,
                 mode=obj.Mode,
                 num_vertexes=obj.num_points,
-                compute_shader=compute_shader,
+                compute_shader=compute_shader
             )
         
-        else: # For other objects
+        elif obj.ProgramID == ProgramID.SURFACE:
             vbo = self.ctx.buffer(obj.vertices.tobytes())
-            vao = self.ctx.vertex_array(
-                program,
-                [(vbo, "3f 3f", "in_position", "in_color")]
-            )
+            vao = self.ctx.vertex_array(program, [(vbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])
             return RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
                 vbo=vbo,
                 mode=obj.Mode,
-                num_vertexes=len(obj.vertices) // 6,
+                num_vertexes=len(obj.vertices) // 9
+            )
+
+        else: # For other objects like BASIC_3D and GRID
+            vbo = self.ctx.buffer(obj.vertices.tobytes())
+            vao = self.ctx.vertex_array(program, [(vbo, "3f 3f", "in_position", "in_color")])
+            return RenderObject(
+                program_id=obj.ProgramID,
+                vao=vao,
+                vbo=vbo,
+                mode=obj.Mode,
+                num_vertexes=len(obj.vertices) // 6
             )
 
     def update_render_object(self, ro: RenderObject, obj: SceneObject):
         ro.vbo.write(obj.vertices.tobytes())
-        ro.num_vertexes = len(obj.vertices) // 6
+        if obj.ProgramID == ProgramID.SURFACE:
+            ro.num_vertexes = len(obj.vertices) // 9
+        else:
+            ro.num_vertexes = len(obj.vertices) // 6
 
 
     def render(self, render_objects: list, cam: Camera, width: int, height: int, h_range=None, v_range=None) -> list[RenderObject]:
@@ -433,6 +498,11 @@ class Renderer:
             program["u_view"].write(cam.get_view_matrix())
             program["u_proj"].write(cam.get_projection_matrix(width, height, h_range=h_range, v_range=v_range))
             
+            if ro.program_id == ProgramID.SURFACE:
+                program["u_model"].write(np.eye(4, dtype=np.float32).tobytes())
+                program["u_light_pos"].write(np.array([10.0, 20.0, 10.0], dtype=np.float32).tobytes())
+                program["u_view_pos"].write(cam.get_position().tobytes())
+
             if ro.program_id == ProgramID.GRID:
                 alpha_multiplier = 1.0
                 if cam.mode == CameraMode.ThreeD:
