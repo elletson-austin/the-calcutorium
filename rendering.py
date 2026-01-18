@@ -648,12 +648,17 @@ class RenderSpace(QOpenGLWidget):
         # Create/update render objects
         for obj in self.scene.objects:
             if hasattr(obj, 'vertices') and obj.vertices.size > 0:
+                # If the object is dirty, we must recreate its render object
+                # to ensure the VBO is correctly sized.
+                if getattr(obj, 'is_dirty', False) and obj in self.render_objects:
+                    ro = self.render_objects.pop(obj)
+                    ro.release() # Release old GPU resources
+                    obj.is_dirty = False
+
                 if obj not in self.render_objects:
                     self.render_objects[obj] = self.renderer.create_render_object(obj)
-                elif getattr(obj, 'is_dirty', False):
-                    self.renderer.update_render_object(self.render_objects[obj], obj)
-                    obj.is_dirty = False
-            else:
+
+            else: # Object has no vertices, remove its render object if it exists
                 if obj in self.render_objects:
                     ro = self.render_objects.pop(obj)
                     ro.release()
