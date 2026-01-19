@@ -131,38 +131,42 @@ class MainWindow(QMainWindow):
         # Add new editors for functions new to the scene
         for func_obj in scene_funcs:
             if func_obj not in self.function_editors:
-                # The subscript passed here is a placeholder, it will be correctly set below
-                editor_widget = FunctionEditorWidget(func_obj, 0)
+                editor_widget = FunctionEditorWidget(func_obj)
                 editor_widget.equation_changed.connect(self.on_equation_changed)
                 self.function_editors[func_obj] = editor_widget
 
-        # --- Rebuild layout and update subscripts ---
+        # --- Rebuild layout ---
         
         # Detach all editor widgets from the layout
         for widget in self.function_editors.values():
             widget.setParent(None)
 
-        # Re-add widgets in the correct order with updated subscripts.
+        # Re-add widgets in the correct order.
         # Newest functions are at the end of scene_funcs, and should appear at the top of the UI.
-        for i, func_obj in enumerate(reversed(scene_funcs)):
-            subscript = len(scene_funcs) - i
+        for func_obj in reversed(scene_funcs):
             widget = self.function_editors[func_obj]
-            widget.set_subscript(subscript)
             # Insert at the top of the layout to have newest functions on top
             self.function_editors_layout.insertWidget(0, widget)
 
     def on_equation_changed(self, math_function: MathFunction, new_equation: str):
         self.output_widget.write(f"Equation changed for '{math_function.name}': '{new_equation}'")        
+        
+        editor = self.function_editors.get(math_function)
+        old_equation = math_function.equation_str
+
         try:
             math_function.regenerate(new_equation)
             # Update name to reflect new equation
             math_function.name = new_equation 
+            if editor:
+                editor.update_label()
         except Exception as e:
             self.output_widget.write_error(f"Error regenerating function: {e}")
-            # Optionally, revert the text in the editor if the new equation is invalid
-            editor = self.function_editors.get(math_function)
+            # Revert the function and editor to the old state
+            math_function.regenerate(old_equation)
             if editor:
-                editor.equation_input.setText(math_function.equation_str)
+                editor.equation_input.setText(old_equation)
+                editor.update_label()
 
 
     def handle_command(self, command: str):

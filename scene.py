@@ -115,29 +115,15 @@ class MathFunction(SceneObject):
 
         if self.num_domain_vars == 1:
             self.Mode = Mode.LINE_STRIP
-            # Default to XY plane visualization in 3D
             indep_var_str = str(self.domain_vars[0])
             output_var_str = str(self.output_var)
 
-            # Determine default indep_axis, output_axis, and const_axis
-            if indep_var_str == 'x':
-                indep_axis = 'x'
-                output_axis = 'y'
-                const_axis = 'z'
-            elif indep_var_str == 'y':
-                indep_axis = 'y'
-                output_axis = 'x' # Or 'z', depending on preferred default
-                const_axis = 'z'  # Or 'x'
-            elif indep_var_str == 'z':
-                indep_axis = 'z'
-                output_axis = 'x' # Or 'y'
-                const_axis = 'y'  # Or 'x'
-            else: # For arbitrary variable names, map to x, y, z
-                indep_axis = 'x'
-                output_axis = 'y'
-                const_axis = 'z'
+            all_axes = {'x', 'y', 'z'}
+            present_vars = {indep_var_str, output_var_str}
+            # The remaining axis will be set to 0.0
+            const_axis_str = (all_axes - present_vars).pop()
                 
-            self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_axis, output_axis=output_axis, const_axis=const_axis)
+            self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_var_str, output_axis=output_var_str, const_axis=const_axis_str)
         elif self.num_domain_vars == 2:
             self.Mode = Mode.TRIANGLES
             self.ProgramID = ProgramID.SURFACE
@@ -161,6 +147,11 @@ class MathFunction(SceneObject):
                 expr_str = parts[1].strip()
 
             self._sympy_expr = sympify(expr_str, evaluate=False)
+
+            # Evaluate any Integral, Derivative, etc., symbolic expressions
+            # before determining domain variables and lambdifying.
+            self._sympy_expr = self._sympy_expr.doit()
+
             self.output_var = symbols(output_var_str)
             
             self.domain_vars = sorted(list(self._sympy_expr.free_symbols), key=lambda s: s.name)
@@ -208,28 +199,44 @@ class MathFunction(SceneObject):
         self.vertices = np.array(vertices, dtype=np.float32)
         self.is_dirty = True
 
-    def _generate_surface_vertices(self, x_range=(-10, 10), y_range=(-10, 10)):
+    def _generate_surface_vertices(self, domain1_range=(-10, 10), domain2_range=(-10, 10)):
         """Generates a triangle mesh for a 2-variable function."""
         if self._callable_func is None or self.num_domain_vars != 2:
             self.vertices = np.array([], dtype=np.float32)
+            self.is_dirty = True
             return
 
-        var_names = {str(v) for v in self.domain_vars}
-        if var_names != {'x', 'y'}:
+        domain_var1_name = str(self.domain_vars[0])
+        domain_var2_name = str(self.domain_vars[1])
+        output_var_name = str(self.output_var)
+
+        all_vars = {domain_var1_name, domain_var2_name, output_var_name}
+        if len(all_vars) != 3 or not all_vars.issubset({'x', 'y', 'z'}):
+            if self.output_widget:
+                self.output_widget.write_error(f"Surface plot must be of the form f(a,b)=c where a,b,c are unique x,y,z variables.")
+            self.vertices = np.array([], dtype=np.float32)
+            self.is_dirty = True
             return
 
-        x_vals = np.linspace(x_range[0], x_range[1], self.points)
-        y_vals = np.linspace(y_range[0], y_range[1], self.points)
-        grid_x, grid_y = np.meshgrid(x_vals, y_vals)
-        
+        domain1_vals = np.linspace(domain1_range[0], domain1_range[1], self.points)
+        domain2_vals = np.linspace(domain2_range[0], domain2_range[1], self.points)
+        grid_domain1, grid_domain2 = np.meshgrid(domain1_vals, domain2_vals)
+
         try:
-            grid_z = self._callable_func(grid_x, grid_y)
+            grid_output = self._callable_func(grid_domain1, grid_domain2)
         except Exception as e:
             if self.output_widget:
                 self.output_widget.write_error(f"Error evaluating surface function: {e}")
-            else:
-                print(f"Error evaluating surface function: {e}")
+            self.vertices = np.array([], dtype=np.float32)
+            self.is_dirty = True
             return
+        
+        grids = {
+            domain_var1_name: grid_domain1,
+            domain_var2_name: grid_domain2,
+            output_var_name: grid_output
+        }
+        grid_x, grid_y, grid_z = grids['x'], grids['y'], grids['z']
 
         vertices = []
         color = [1.0, 0.2, 0.2] 
@@ -245,7 +252,9 @@ class MathFunction(SceneObject):
                 v1 = p3 - p1
                 v2 = p2 - p1
                 n1 = np.cross(v1, v2)
-                n1 /= np.linalg.norm(n1)
+                norm_n1 = np.linalg.norm(n1)
+                if norm_n1 > 1e-6:
+                    n1 /= norm_n1
 
                 vertices.extend([*p1, *n1, *color])
                 vertices.extend([*p3, *n1, *color])
@@ -255,7 +264,9 @@ class MathFunction(SceneObject):
                 v1 = p3 - p2
                 v2 = p4 - p2
                 n2 = np.cross(v1, v2)
-                n2 /= np.linalg.norm(n2)
+                norm_n2 = np.linalg.norm(n2)
+                if norm_n2 > 1e-6:
+                    n2 /= norm_n2
 
                 vertices.extend([*p2, *n2, *color])
                 vertices.extend([*p3, *n2, *color])

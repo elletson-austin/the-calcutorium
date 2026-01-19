@@ -815,12 +815,16 @@ class RenderSpace(QOpenGLWidget):
                 self.cam.projection = Projection.Perspective
             else:
                 self.cam.projection = Projection.Orthographic
+            event.accept()
+            return
         
         # Toggle 2D/3D mode with M key
         if event.key() == Qt.Key.Key_M:
             if self.cam.mode == CameraMode.ThreeD:
                 self.cam.mode = CameraMode.TwoD
                 self.cam.projection = Projection.Orthographic
+            event.accept()
+            return
 
         super().keyPressEvent(event)
 
@@ -828,3 +832,4 @@ class RenderSpace(QOpenGLWidget):
     def keyReleaseEvent(self, event: QKeyEvent):
         """Handle key release events."""
         self.input_state.keys_held.discard(event.key())
+        super().keyReleaseEvent(event)

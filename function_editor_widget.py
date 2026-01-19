@@ -5,7 +5,7 @@ from scene import MathFunction
 class FunctionEditorWidget(QWidget):
     equation_changed = Signal(MathFunction, str)
 
-    def __init__(self, math_function: MathFunction, subscript: int, parent=None):
+    def __init__(self, math_function: MathFunction, parent=None):
         super().__init__(parent)
         self.math_function = math_function
         
@@ -15,7 +15,7 @@ class FunctionEditorWidget(QWidget):
         self.layout.setSpacing(5)
 
         self.label = QLabel()
-        self.set_subscript(subscript)
+        self.update_label()
         self.layout.addWidget(self.label)
 
         self.equation_input = QLineEdit()
@@ -24,8 +24,14 @@ class FunctionEditorWidget(QWidget):
         
         self.layout.addWidget(self.equation_input)
 
-    def set_subscript(self, subscript: int):
-        self.label.setText(f"f<sub>{subscript}</sub> =")
+    def update_label(self):
+        if self.math_function.output_var and self.math_function.domain_vars:
+            domain_vars_str = ", ".join(sorted([str(v) for v in self.math_function.domain_vars]))
+            output_var_str = str(self.math_function.output_var)
+            self.label.setText(f"f({domain_vars_str}) = {output_var_str}")
+        else:
+            # Fallback for functions without clear variables (e.g. just "5")
+            self.label.setText("f =")
 
     def on_equation_changed(self):
         new_equation = self.equation_input.text()
