@@ -446,7 +446,14 @@ class Renderer:
             vbo = self.ctx.buffer(obj.vertices.tobytes())
             vao = self.ctx.vertex_array(program, [(vbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
-            # ... (uniform setup for compute shader)
+            
+            # Set uniforms for the compute shader
+            compute_shader['sigma'].value = obj.sigma
+            compute_shader['rho'].value = obj.rho
+            compute_shader['beta'].value = obj.beta
+            compute_shader['dt'].value = obj.dt
+            compute_shader['steps'].value = obj.steps
+
             return RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
@@ -454,8 +461,7 @@ class Renderer:
                 mode=obj.Mode,
                 num_vertexes=obj.num_points,
                 compute_shader=compute_shader
-            )
-        
+            )        
         elif obj.ProgramID == ProgramID.SURFACE:
             vbo = self.ctx.buffer(obj.vertices.tobytes())
             vao = self.ctx.vertex_array(program, [(vbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])

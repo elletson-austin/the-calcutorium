@@ -8,7 +8,7 @@ import sys
 from scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
 from rendering import RenderSpace, CameraMode, SnapMode
 from input_widget import InputWidget
-from function_editor_widget import FunctionEditorWidget
+from function_editor_widget import ExpressionEditor
 from output_widget import OutputWidget
 
 class TabKeyEventFilter(QObject):
@@ -50,8 +50,7 @@ class MainWindow(QMainWindow):
         self.event_filter = TabKeyEventFilter(self.render_widget)
         QApplication.instance().installEventFilter(self.event_filter)
 
-        # A dictionary to map MathFunction objects to their editor widgets
-        self.function_editors = {}
+
 
         # --- Layout Setup ---
         central_widget = QWidget()
@@ -70,14 +69,15 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(5, 5, 5, 5)
         left_layout.setSpacing(5) # Add spacing between widgets
 
-        # Scroll area for function editors
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_widget = QWidget()
-        self.function_editors_layout = QVBoxLayout(scroll_widget)
-        self.function_editors_layout.addStretch(1)
-        scroll_area.setWidget(scroll_widget)
+
+
+        # Function editors area (now using ExpressionEditor)
+        self.expression_editor = ExpressionEditor(scene=self.scene)
+        self.expression_editor_scroll_area = QScrollArea()
+        self.expression_editor_scroll_area.setWidgetResizable(True)
+        self.expression_editor_scroll_area.setWidget(self.expression_editor)
+        self.expression_editor_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.expression_editor_scroll_area.setStyleSheet("border: none;")
 
         # Input widget
         self.input_win = InputWidget()
@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
         
         
         # New layout order and stretches
-        left_layout.addWidget(scroll_area, 1)
+        left_layout.addWidget(self.expression_editor_scroll_area, 1) # Expression Editor now takes stretch 1
         left_layout.addWidget(self.input_win)
         left_layout.addWidget(self.output_widget, 1)
 
@@ -115,59 +115,6 @@ class MainWindow(QMainWindow):
 
     def _handle_manual_range_cleared(self):
         self.output_widget.write("Manual range cleared due to user interaction. Returning to automatic ranging.")
-
-    def update_function_editors(self):
-        # Get an ordered list of MathFunction objects from the scene
-        scene_funcs = [obj for obj in self.scene.objects if isinstance(obj, MathFunction)]
-        
-        # Sync self.function_editors with scene_funcs
-        # Remove editors for functions no longer in the scene
-        for func_obj in list(self.function_editors.keys()):
-            if func_obj not in scene_funcs:
-                widget = self.function_editors.pop(func_obj)
-                widget.setParent(None)
-                widget.deleteLater()
-
-        # Add new editors for functions new to the scene
-        for func_obj in scene_funcs:
-            if func_obj not in self.function_editors:
-                editor_widget = FunctionEditorWidget(func_obj)
-                editor_widget.equation_changed.connect(self.on_equation_changed)
-                self.function_editors[func_obj] = editor_widget
-
-        # --- Rebuild layout ---
-        
-        # Detach all editor widgets from the layout
-        for widget in self.function_editors.values():
-            widget.setParent(None)
-
-        # Re-add widgets in the correct order.
-        # Newest functions are at the end of scene_funcs, and should appear at the top of the UI.
-        for func_obj in reversed(scene_funcs):
-            widget = self.function_editors[func_obj]
-            # Insert at the top of the layout to have newest functions on top
-            self.function_editors_layout.insertWidget(0, widget)
-
-    def on_equation_changed(self, math_function: MathFunction, new_equation: str):
-        self.output_widget.write(f"Equation changed for '{math_function.name}': '{new_equation}'")        
-        
-        editor = self.function_editors.get(math_function)
-        old_equation = math_function.equation_str
-
-        try:
-            math_function.regenerate(new_equation)
-            # Update name to reflect new equation
-            math_function.name = new_equation 
-            if editor:
-                editor.update_label()
-        except Exception as e:
-            self.output_widget.write_error(f"Error regenerating function: {e}")
-            # Revert the function and editor to the old state
-            math_function.regenerate(old_equation)
-            if editor:
-                editor.equation_input.setText(old_equation)
-                editor.update_label()
-
 
     def handle_command(self, command: str):
         self.output_widget.write(f"Command received in MainWindow: {command}")
@@ -206,14 +153,14 @@ class MainWindow(QMainWindow):
   range <x|y|z> <min> <max> - Manually set the visible range for an axis (e.g., 'range x -10 10')
   range auto - Reset all axes to automatic ranging
   add lorenz - Add a Lorenz attractor to the scene
-  add func \"<function_string>\" - Add a mathematical function to the scene (e.g., 'add func \"x**2\"')
-  remove func \"<function_string>\" - Remove a mathematical function from the scene (e.g., 'remove func \"x**2\"')"""
+  add func - Add a new mathematical function editor
+  remove func - Remove the last mathematical function editor"""
         self.output_widget.write(help_message)
 
     def _clear_command(self, command_parts: list[str]):
         # Remove all objects except for the axes and grid
         self.scene.objects = [obj for obj in self.scene.objects if getattr(obj, 'name', '') in ['axes', 'grid']]
-        self.update_function_editors()
+        # self.update_function_editors() # Old method
         self.output_widget.write("Scene cleared.")
 
     def _list_command(self, command_parts: list[str]):
@@ -259,7 +206,7 @@ class MainWindow(QMainWindow):
             with open(filename, 'r') as f:
                 scene_data = json.load(f)
             self.scene.from_dict(scene_data)
-            self.update_function_editors()
+            # self.update_function_editors() # Old method
             self.output_widget.write(f"Scene loaded from {filename}")
         except FileNotFoundError:
             self.output_widget.write_error(f"Error: File not found '{filename}'")
@@ -393,50 +340,20 @@ class MainWindow(QMainWindow):
             return
         
         if type_ == "func":
-            if len(command_parts) < 3:
-                self.output_widget.write_error(f"Invalid 'add func' command. Expected: add func \"<value>\".")
-                return
-            
-            value_string = command_parts[2]
-
-            try:
-                # Check if a function with this equation string already exists
-                for obj in self.scene.objects:
-                    if isinstance(obj, MathFunction) and obj.equation_str == value_string:
-                        self.output_widget.write(f"Function '{value_string}' already exists in the scene.")
-                        return
-                new_func = MathFunction(value_string, output_widget=self.output_widget) # Pass output_widget
-                new_func.name = value_string # Assign name for identification
-                self.scene.objects.append(new_func)
-                self.update_function_editors()
-                self.output_widget.write(f"Added function: {value_string}")
-            except Exception as e:
-                self.output_widget.write_error(f"Error adding function '{value_string}': {e}")
+            self.expression_editor.add_new_expression()
+            self.output_widget.write("Added new function editor.")
             return
     
     def _remove_command(self, command_parts: list[str]):
         if len(command_parts) < 2:
-            self.output_widget.write_error(f"Invalid 'remove' command format. Expected: 'remove <type> \"<value>\"'. Type 'help' for available commands.")
+            self.output_widget.write_error(f"Invalid 'remove' command format. Expected: 'remove <type> ...'. Type 'help' for available commands.")
             return
         
         type_ = command_parts[1].lower()
         if type_ == "func":
-            if len(command_parts) < 3:
-                self.output_widget.write_error(f"Invalid 'remove func' command. Expected: remove func \"<value>\".")
-                return
-
-            value_string = command_parts[2]
-
-            func_to_remove = None
-            for obj in self.scene.objects:
-                if isinstance(obj, MathFunction) and obj.equation_str == value_string:
-                    func_to_remove = obj
-                    break
-            
-            if func_to_remove:
-                self.scene.objects.remove(func_to_remove)
-                self.update_function_editors()
-                self.output_widget.write(f"Removed function: {value_string}")
-            else:
-                self.output_widget.write(f"Function '{value_string}' not found in the scene.")
+            # This is also temporary. It should ideally allow specifying which function to remove.
+            # For now, it will remove the last added expression.
+            # self.expression_editor.remove_last_expression() # A method to be created in ExpressionEditor
+            self.output_widget.write("Function removal not fully implemented yet.")
             return
+
