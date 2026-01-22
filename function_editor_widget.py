@@ -46,6 +46,56 @@ class ExpressionView(QWidget):
         self.node_render_rects = {}
 
         self.setMinimumHeight(50)
+    
+    def _ast_to_string(self, node: Node) -> str:
+        """Recursively traverses the AST to build a SymPy-compatible string."""
+        if isinstance(node, ConstantNode):
+            return str(node.value)
+        if isinstance(node, VariableNode):
+            return node.name
+        if isinstance(node, PlaceholderNode):
+            # Use text if available, otherwise treat as 0 for continuity
+            return node.text or "0"
+        if isinstance(node, UnaryOpNode):
+            # Parenthesize to ensure correct precedence
+            return f"({node.op}{self._ast_to_string(node.operand)})"
+        if isinstance(node, BinaryOpNode):
+            # Use Python's power operator ** instead of ^
+            op_str = "**" if node.op == '^' else node.op
+            # Parenthesize to ensure correct precedence
+            return f"({self._ast_to_string(node.left)} {op_str} {self._ast_to_string(node.right)})"
+        if isinstance(node, FunctionNode):
+            args = ", ".join([self._ast_to_string(child) for child in node.children])
+            return f"{node.name}({args})"
+        if isinstance(node, EquationNode):
+            left_str = self._ast_to_string(node.left)
+            right_str = self._ast_to_string(node.right)
+            # Default to 'y' if left side is empty/invalid during editing
+            if not left_str or left_str == "0":
+                left_str = "y"
+            return f"{left_str} = {right_str}"
+        return ""
+
+    def _commit_placeholder_text(self, node):
+        """
+        If the given node is a PlaceholderNode with text, convert it to a
+        ConstantNode or VariableNode and return the new node. Otherwise,
+        return the original node.
+        """
+        if isinstance(node, PlaceholderNode) and node.text:
+            text = node.text
+            try:
+                # Try to convert to a number first
+                value = float(text)
+                new_node = ConstantNode(value, parent=node.parent)
+            except ValueError:
+                # Otherwise, it's a variable
+                new_node = VariableNode(text, parent=node.parent)
+            
+            self._replace_node(node, new_node)
+            self.ast_changed.emit(self) # Notify the scene of the change
+            return new_node
+        return node
 
     def _get_in_order_nodes(self, node: Node, node_list: list):
         """Performs an in-order traversal of the AST to get a flat list of nodes."""
@@ -77,86 +127,105 @@ class ExpressionView(QWidget):
         self.cursor_node = new_node # Move cursor to the newly created node
 
     def keyPressEvent(self, event: QKeyEvent):
-        """Handles user input for navigation and (soon) editing."""
+        """Handles user input for navigation and editing."""
+        
+        # --- Pre-action: Commit any pending text in a placeholder ---
+        # This is crucial for turning typed text like "x" into a VariableNode
+        # before an action like moving the cursor or inserting an operator.
+        if event.key() in [Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down] \
+           or event.text() in ['+', '-', '*', '/', '^']:
+            self.cursor_node = self._commit_placeholder_text(self.cursor_node)
+
         nodes_in_order = []
         self._get_in_order_nodes(self.ast_root, nodes_in_order)
         
         try:
             current_index = nodes_in_order.index(self.cursor_node)
         except ValueError:
-            current_index = 0
+            # If cursor node isn't in the list (e.g., after a commit), find its new position
+            try:
+                # This is a bit of a guess, assuming the committed node is what we want
+                current_index = nodes_in_order.index(self.cursor_node)
+            except ValueError:
+                current_index = 0
+
+        # --- Handle navigation and actions ---
 
         if event.key() == Qt.Key.Key_Left:
             new_index = max(0, current_index - 1)
             self.cursor_node = nodes_in_order[new_index]
             self.update()
             event.accept()
+
         elif event.key() == Qt.Key.Key_Right:
             new_index = min(len(nodes_in_order) - 1, current_index + 1)
             self.cursor_node = nodes_in_order[new_index]
             self.update()
             event.accept()
-        elif event.key() == Qt.Key.Key_Backspace and not isinstance(self.cursor_node, EquationNode):
-            new_node = PlaceholderNode(parent=self.cursor_node.parent)
-            self._replace_node(self.cursor_node, new_node)
+
+        elif event.key() == Qt.Key.Key_Backspace:
+            if isinstance(self.cursor_node, PlaceholderNode) and self.cursor_node.text:
+                # If there's text, just delete the last character
+                self.cursor_node.text = self.cursor_node.text[:-1]
+            elif not isinstance(self.cursor_node, EquationNode):
+                # If no text or not a placeholder, replace the node
+                new_node = PlaceholderNode(parent=self.cursor_node.parent)
+                self._replace_node(self.cursor_node, new_node)
+            
             self.ast_changed.emit(self)
             self.update()
             event.accept()
+
         elif event.text() in ['+', '-', '*', '/', '^']:
-            # Handle operator insertion
             op = event.text()
-            # We can insert an operator if the cursor is on a "wrappable" node
             if isinstance(self.cursor_node, (ConstantNode, VariableNode, BinaryOpNode, FunctionNode)):
                 node_to_wrap = self.cursor_node
                 original_parent = node_to_wrap.parent
 
-                # Abort if we can't find a parent to modify
-                if original_parent is None:
+                if original_parent is None or (isinstance(original_parent, EquationNode) and original_parent.left == node_to_wrap):
                     super().keyPressEvent(event)
                     return
-
-                # Don't wrap the 'y' variable in 'y = ...'
-                if isinstance(original_parent, EquationNode) and original_parent.left == node_to_wrap:
-                    super().keyPressEvent(event)
-                    return
-
-                # Find the index of the node we're wrapping
+                
                 try:
                     idx = original_parent.children.index(node_to_wrap)
                 except ValueError:
                     super().keyPressEvent(event)
                     return
 
-                # Perform the tree surgery
                 op_node = BinaryOpNode(op)
                 op_node.parent = original_parent
                 op_node.left = node_to_wrap
-                op_node.right = PlaceholderNode(op_node) # Set parent on creation
+                op_node.right = PlaceholderNode(op_node)
                 node_to_wrap.parent = op_node
-
-                # Replace the old node with the new operator node in the parent
                 original_parent.children[idx] = op_node
-
-                # Move cursor to the new placeholder
                 self.cursor_node = op_node.right
                 
                 self.ast_changed.emit(self)
                 self.update()
                 event.accept()
 
-        elif isinstance(self.cursor_node, PlaceholderNode):
-            if Qt.Key_0 <= event.key() <= Qt.Key_9:
-                value = int(event.text())
-                new_node = ConstantNode(value, parent=self.cursor_node.parent)
+        elif event.text() == '(':
+            if isinstance(self.cursor_node, PlaceholderNode) and self.cursor_node.text:
+                func_name = self.cursor_node.text
+                new_node = FunctionNode(name=func_name, parent=self.cursor_node.parent)
                 self._replace_node(self.cursor_node, new_node)
+                self.cursor_node = new_node.children[0]
                 self.ast_changed.emit(self)
                 self.update()
                 event.accept()
-            elif event.text().isalpha() and len(event.text()) == 1:
-                name = event.text().lower()
-                new_node = VariableNode(name, parent=self.cursor_node.parent)
-                self._replace_node(self.cursor_node, new_node)
-                self.ast_changed.emit(self)
+            else:
+                # TODO: Handle parentheses wrapping a selection
+                super().keyPressEvent(event)
+
+        elif isinstance(self.cursor_node, PlaceholderNode):
+            text = event.text()
+            if text.isalnum():
+                self.cursor_node.text += text
+                self.update()
+                event.accept()
+            elif Qt.Key_0 <= event.key() <= Qt.Key_9:
+                 # This case might be redundant now with isalnum, but kept for safety
+                self.cursor_node.text += text
                 self.update()
                 event.accept()
             else:
@@ -164,23 +233,23 @@ class ExpressionView(QWidget):
         else:
             super().keyPressEvent(event)
 
+
     def mousePressEvent(self, event: QMouseEvent):
         """Handles mouse clicks to set the cursor node."""
         click_pos = event.position()
         
-        # Find all nodes that contain the click position
+        self.cursor_node = self._commit_placeholder_text(self.cursor_node)
+
         clicked_nodes = []
         for node, rect in self.node_render_rects.items():
             if rect.contains(click_pos):
                 clicked_nodes.append(node)
         
-        # Of the nodes that were clicked, choose the one with the smallest area
         if clicked_nodes:
-            # Sort by area (width * height)
             clicked_nodes.sort(key=lambda n: self.node_render_rects[n].width() * self.node_render_rects[n].height())
             self.cursor_node = clicked_nodes[0]
-            self.setFocus() # Ensure widget has focus for keyboard input
-            self.update() # Redraw to show new cursor
+            self.setFocus()
+            self.update()
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -196,7 +265,6 @@ class ExpressionView(QWidget):
         painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
         painter.setPen(Qt.GlobalColor.black)
 
-        # Clear old layout data before recalculating
         self.layout_rects.clear()
         self.node_render_rects.clear()
         
@@ -214,14 +282,17 @@ class ExpressionView(QWidget):
         if node in self.layout_rects:
             return self.layout_rects[node]
 
-        metrics = self.fontMetrics()
+        metrics = QFontMetrics(self.font)
         rect = QRectF()
 
         if isinstance(node, (ConstantNode, VariableNode)):
             text = str(node.value) if isinstance(node, ConstantNode) else node.name
             rect = QRectF(0, 0, metrics.horizontalAdvance(text), metrics.height())
         elif isinstance(node, PlaceholderNode):
-            rect = QRectF(0, 0, 15, metrics.height())
+            if node.text:
+                rect = QRectF(0, 0, metrics.horizontalAdvance(node.text), metrics.height())
+            else:
+                rect = QRectF(0, 0, 15, metrics.height())
         elif isinstance(node, (BinaryOpNode, EquationNode)):
             if isinstance(node, BinaryOpNode) and node.op == '^':
                 left_rect = self._calculate_rect(node.left)
@@ -239,7 +310,7 @@ class ExpressionView(QWidget):
                 right_rect = self._calculate_rect(node.right)
                 
                 op_text = f" {node.op} " if isinstance(node, BinaryOpNode) else " = "
-                op_width = self.fontMetrics().horizontalAdvance(op_text)
+                op_width = metrics.horizontalAdvance(op_text)
                 
                 if isinstance(node, BinaryOpNode) and node.op == '/':
                     total_width = max(left_rect.width(), right_rect.width())
@@ -252,11 +323,11 @@ class ExpressionView(QWidget):
         elif isinstance(node, UnaryOpNode):
             operand_rect = self._calculate_rect(node.operand)
             op_text = node.op
-            op_width = self.fontMetrics().horizontalAdvance(op_text)
+            op_width = metrics.horizontalAdvance(op_text)
             rect = QRectF(0, 0, op_width + operand_rect.width(), operand_rect.height())
         elif isinstance(node, FunctionNode):
-            func_name_width = self.fontMetrics().horizontalAdvance(node.name + "(")
-            closing_paren_width = self.fontMetrics().horizontalAdvance(")")
+            func_name_width = metrics.horizontalAdvance(node.name + "(")
+            closing_paren_width = metrics.horizontalAdvance(")")
             
             args_width = 0
             max_arg_height = 0
@@ -265,7 +336,7 @@ class ExpressionView(QWidget):
                 args_width += child_rect.width()
                 max_arg_height = max(max_arg_height, child_rect.height())
                 if i < len(node.children) - 1:
-                    args_width += self.fontMetrics().horizontalAdvance(", ")
+                    args_width += metrics.horizontalAdvance(", ")
             total_width = func_name_width + args_width + closing_paren_width
             total_height = max(metrics.height(), max_arg_height)
             rect = QRectF(0, 0, total_width, total_height)
@@ -280,7 +351,6 @@ class ExpressionView(QWidget):
         """
         node_rect = self.layout_rects.get(node, QRectF())
         
-        # Store the final screen rectangle for hit testing
         final_rect = QRectF(position, node_rect.size())
         self.node_render_rects[node] = final_rect
 
@@ -293,17 +363,24 @@ class ExpressionView(QWidget):
             painter.setPen(Qt.GlobalColor.black)
 
         text_v_center = position.y() + node_rect.height() / 2
+        
+        # Use the correct font for the current painter state
+        metrics = painter.fontMetrics()
 
         if isinstance(node, ConstantNode):
             painter.setFont(self.font)
-            painter.drawText(QPointF(position.x(), text_v_center + self.fontMetrics().ascent() / 2), str(node.value))
+            painter.drawText(QPointF(position.x(), text_v_center + metrics.ascent() / 2), str(node.value))
         elif isinstance(node, VariableNode):
             painter.setFont(self.font)
-            painter.drawText(QPointF(position.x(), text_v_center + self.fontMetrics().ascent() / 2), node.name)
+            painter.drawText(QPointF(position.x(), text_v_center + metrics.ascent() / 2), node.name)
         elif isinstance(node, PlaceholderNode):
-            painter.setBrush(QColor(240, 240, 240))
-            painter.setPen(Qt.PenStyle.DotLine)
-            painter.drawRect(final_rect)
+            if node.text:
+                painter.setFont(self.font)
+                painter.drawText(QPointF(position.x(), text_v_center + metrics.ascent() / 2), node.text)
+            else:
+                painter.setBrush(QColor(240, 240, 240))
+                painter.setPen(Qt.PenStyle.DotLine)
+                painter.drawRect(final_rect)
         elif isinstance(node, (BinaryOpNode, EquationNode)):
             left_rect = self.layout_rects.get(node.left, QRectF())
             right_rect = self.layout_rects.get(node.right, QRectF())
@@ -319,7 +396,6 @@ class ExpressionView(QWidget):
                 painter.setFont(original_font)
             else:
                 op_text = f" {node.op} " if isinstance(node, BinaryOpNode) else " = "
-                op_width = self.fontMetrics().horizontalAdvance(op_text)
                 
                 if isinstance(node, BinaryOpNode) and node.op == '/':
                     left_start_x = position.x() + (node_rect.width() - left_rect.width()) / 2
@@ -329,31 +405,31 @@ class ExpressionView(QWidget):
                     painter.drawLine(QPointF(position.x(), bar_y), QPointF(position.x() + node_rect.width(), bar_y))
 
                     right_start_x = position.x() + (node_rect.width() - right_rect.width()) / 2
-                    self._draw_node(painter, node.right, QPointF(right_start_x, bar_y + self.padding / 2 + self.fontMetrics().height()))
+                    self._draw_node(painter, node.right, QPointF(right_start_x, bar_y + self.padding / 2 + metrics.height()))
                 else:
                     left_child_y = position.y() + (node_rect.height() - left_rect.height()) / 2
                     self._draw_node(painter, node.left, QPointF(position.x(), left_child_y))
                     
                     current_x = position.x() + left_rect.width()
                     painter.setFont(self.op_font)
-                    painter.drawText(QPointF(current_x, text_v_center + self.fontMetrics().ascent() / 2), op_text)
+                    painter.drawText(QPointF(current_x, text_v_center + metrics.ascent() / 2), op_text)
 
-                    current_x += op_width
+                    current_x += metrics.horizontalAdvance(op_text)
                     right_child_y = position.y() + (node_rect.height() - right_rect.height()) / 2
                     self._draw_node(painter, node.right, QPointF(current_x, right_child_y))
         elif isinstance(node, UnaryOpNode):
             op_text = node.op
-            op_width = self.fontMetrics().horizontalAdvance(op_text)
+            op_width = metrics.horizontalAdvance(op_text)
             
             painter.setFont(self.op_font)
-            painter.drawText(QPointF(position.x(), text_v_center + self.fontMetrics().ascent() / 2), op_text)
+            painter.drawText(QPointF(position.x(), text_v_center + metrics.ascent() / 2), op_text)
             
             self._draw_node(painter, node.operand, QPointF(position.x() + op_width, position.y()))
         elif isinstance(node, FunctionNode):
             current_x = position.x()
             
-            painter.drawText(QPointF(current_x, text_v_center + self.fontMetrics().ascent() / 2), node.name + "(")
-            current_x += self.fontMetrics().horizontalAdvance(node.name + "(")
+            painter.drawText(QPointF(current_x, text_v_center + metrics.ascent() / 2), node.name + "(")
+            current_x += metrics.horizontalAdvance(node.name + "(")
             
             for i, child in enumerate(node.children):
                 child_rect = self.layout_rects.get(child, QRectF())
@@ -361,10 +437,10 @@ class ExpressionView(QWidget):
                 self._draw_node(painter, child, QPointF(current_x, child_y))
                 current_x += child_rect.width()
                 if i < len(node.children) - 1:
-                    painter.drawText(QPointF(current_x, text_v_center + self.fontMetrics().ascent() / 2), ", ")
-                    current_x += self.fontMetrics().horizontalAdvance(", ")
+                    painter.drawText(QPointF(current_x, text_v_center + metrics.ascent() / 2), ", ")
+                    current_x += metrics.horizontalAdvance(", ")
             
-            painter.drawText(QPointF(current_x, text_v_center + self.fontMetrics().ascent() / 2), ")")
+            painter.drawText(QPointF(current_x, text_v_center + metrics.ascent() / 2), ")")
 
 
 class ExpressionEditor(QWidget):
@@ -405,14 +481,14 @@ class ExpressionEditor(QWidget):
         # If the scene is connected, create and add the corresponding MathFunction
         if self.scene:
             try:
-                # The initial function is basically empty, so it might not plot anything
-                # or might evaluate to y=0 depending on placeholder handling. This is expected.
-                new_func = MathFunction(equation=equation)
+                # On creation, pass the initial string representation
+                equation_str = view._ast_to_string(equation)
+                new_func = MathFunction(equation_str=equation_str)
                 self.scene.objects.append(new_func)
                 self.view_to_function_map[view] = new_func
             except Exception as e:
                 # TODO: Handle this error in the UI, e.g., in the output widget
-                print(f"Error creating function from AST: {e}")
+                print(f"Error creating function from AST string: {e}")
 
     def set_active_view(self, view: ExpressionView):
         """Sets the currently active expression view for keyboard input."""
@@ -425,7 +501,9 @@ class ExpressionEditor(QWidget):
         if self.scene and changed_view in self.view_to_function_map:
             math_function = self.view_to_function_map[changed_view]
             try:
-                math_function.regenerate(changed_view.ast_root)
+                # Convert the entire equation AST to a string and regenerate
+                equation_str = changed_view._ast_to_string(changed_view.ast_root)
+                math_function.regenerate(equation_str)
             except Exception as e:
                 # TODO: Display this error in the output widget for the user
-                print(f"Error regenerating MathFunction from AST: {e}")
+                print(f"Error regenerating from AST string: {e}")

@@ -7,7 +7,7 @@ import sys
 # Import our custom components
 from scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
 from rendering import RenderSpace, CameraMode, SnapMode
-from input_widget import InputWidget
+from terminal_widget import InputWidget
 from function_editor_widget import ExpressionEditor
 from output_widget import OutputWidget
 
@@ -160,7 +160,6 @@ class MainWindow(QMainWindow):
     def _clear_command(self, command_parts: list[str]):
         # Remove all objects except for the axes and grid
         self.scene.objects = [obj for obj in self.scene.objects if getattr(obj, 'name', '') in ['axes', 'grid']]
-        # self.update_function_editors() # Old method
         self.output_widget.write("Scene cleared.")
 
     def _list_command(self, command_parts: list[str]):

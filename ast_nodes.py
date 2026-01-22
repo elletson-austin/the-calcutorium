@@ -39,11 +39,12 @@ class PlaceholderNode(Node):
     This is what the user interacts with to build the tree. It is visually
     represented as an empty box or a blinking cursor.
     """
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, text=""):
         super().__init__(parent)
+        self.text = text
 
     def __repr__(self):
-        return "PlaceholderNode()"
+        return f"PlaceholderNode(text='{self.text}')"
 
 class BinaryOpNode(Node):
     """

@@ -1,6 +1,9 @@
 from enum import Enum, auto
 import numpy as np
-from sympy import symbols, lambdify, sympify, SympifyError, Function
+from sympy import (
+    symbols, lambdify, sympify, SympifyError, Function as SympyFunction,
+    sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, exp, log, sqrt, Integer
+)
 from render_types import CameraMode
 from ast_nodes import (
     EquationNode, Node, ConstantNode, VariableNode, BinaryOpNode,
@@ -96,119 +99,37 @@ class Axes(SceneObject):
         self.dynamic = False
         self.ProgramID = ProgramID.BASIC_3D
 
-from ast_nodes import (
-    EquationNode, Node, ConstantNode, VariableNode, BinaryOpNode,
-    PlaceholderNode, UnaryOpNode, FunctionNode
-)
-from sympy import symbols, lambdify, sympify, SympifyError, Function as SympyFunction
-
 class MathFunction(SceneObject):
-    def __init__(self, equation, points: int = 100, output_widget=None):
+    def __init__(self, equation_str: str, points: int = 100, output_widget=None):
         super().__init__(Mode=Mode.LINE_STRIP)
-        self.equation = equation
         self.points = points
         self.output_widget = output_widget
-        self.equation_str = ""
         
+        # All internal state is reset and set by regenerate()
+        self.equation_str = ""
         self.domain_vars = []
         self.output_var = None
         self._sympy_expr = None
         self._callable_func = None
-        self.num_domain_vars = 0
-
+        self.num_domain_vars = -1 # Indicate not parsed yet
         self.current_plane = None
         self.current_domain_range = None
         
-        if isinstance(equation, str):
-            self.equation_str = equation
-            self._parse_string_and_lambdify()
-        elif isinstance(equation, EquationNode):
-            # We can create a string representation for display/debugging if needed
-            self.equation_str = "AST-based function" 
-            self._parse_ast_and_lambdify(equation)
-        else:
-            raise TypeError("Equation must be a string or an EquationNode")
+        self.regenerate(equation_str)
 
-        self.vertices = np.array([], dtype=np.float32)
-        self.is_dirty = True
+    def _parse_and_lambdify(self, equation_str: str):
+        """Parses the equation string and creates a callable function."""
+        self.equation_str = equation_str
+        self.domain_vars = []
+        self.output_var = None
+        self._sympy_expr = None
+        self._callable_func = None
+        self.num_domain_vars = -1
 
-        # Initial vertex generation based on number of variables
-        if self.num_domain_vars == 1:
-            self.Mode = Mode.LINE_STRIP
-            self.ProgramID = ProgramID.BASIC_3D
-            indep_var_str = str(self.domain_vars[0])
-            output_var_str = str(self.output_var)
-            
-            all_axes = {'x', 'y', 'z'}
-            present_vars = {indep_var_str, output_var_str}
-            if len(present_vars) < 2: # e.g. y=y
-                const_axis_str = 'z' # arbitrary default
-            else:
-                const_axis_str = (all_axes - present_vars).pop()
-                
-            self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_var_str, output_axis=output_var_str, const_axis=const_axis_str)
-        elif self.num_domain_vars == 2:
-            self.Mode = Mode.TRIANGLES
-            self.ProgramID = ProgramID.SURFACE
-            self._generate_surface_vertices()
-        else:
-            self.ProgramID = ProgramID.BASIC_3D
-
-    def _ast_to_sympy(self, node: Node):
-        if isinstance(node, ConstantNode):
-            return node.value
-        if isinstance(node, VariableNode):
-            return symbols(node.name)
-        if isinstance(node, UnaryOpNode):
-            operand = self._ast_to_sympy(node.operand)
-            if node.op == '-':
-                return -operand
-        if isinstance(node, BinaryOpNode):
-            left = self._ast_to_sympy(node.left)
-            right = self._ast_to_sympy(node.right)
-            op_map = {
-                '+': lambda a, b: a + b,
-                '-': lambda a, b: a - b,
-                '*': lambda a, b: a * b,
-                '/': lambda a, b: a / b,
-                '^': lambda a, b: a ** b,
-            }
-            if node.op in op_map:
-                return op_map[node.op](left, right)
-        if isinstance(node, FunctionNode):
-            sympy_func = SympyFunction(node.name)
-            args = [self._ast_to_sympy(child) for child in node.children]
-            return sympy_func(*args)
-        if isinstance(node, PlaceholderNode):
-            from sympy import Integer
-            return Integer(0) # Return sympy.Integer(0) instead of raw int 0
-        raise TypeError(f"Unknown or unsupported node type for sympy conversion: {type(node)}")
-
-    def _parse_ast_and_lambdify(self, equation_node: EquationNode):
-        try:
-            if not isinstance(equation_node.left, VariableNode):
-                raise ValueError("Equation's left side must be a single variable (e.g., y).")
-            self.output_var = symbols(equation_node.left.name)
-
-            self._sympy_expr = self._ast_to_sympy(equation_node.right)
-            self._sympy_expr = self._sympy_expr.doit()
-
-            self.domain_vars = sorted(list(self._sympy_expr.free_symbols), key=lambda s: s.name)
-            self.num_domain_vars = len(self.domain_vars)
-            
-            if self.num_domain_vars > 2:
-                raise ValueError("Functions with more than two independent variables are not supported.")
-            
-            if self.num_domain_vars > 0:
-                self._callable_func = lambdify(self.domain_vars, self._sympy_expr, 'numpy')
-
-        except (ValueError, TypeError) as e:
-            raise ValueError(f"Error processing equation AST: {e}") from e
-
-    def _parse_string_and_lambdify(self):
-        if not self.equation_str.strip():
+        if not equation_str.strip():
             return
 
+        print(f"Parsing equation: {equation_str}")
         try:
             output_var_str = 'y'
             expr_str = self.equation_str
@@ -217,9 +138,9 @@ class MathFunction(SceneObject):
                 parts = self.equation_str.split('=', 1)
                 output_var_str = parts[0].strip()
                 expr_str = parts[1].strip()
-
-            self._sympy_expr = sympify(expr_str, evaluate=False)
-            self._sympy_expr = self._sympy_expr.doit()
+            
+            # Use sympify to parse the string into a SymPy expression
+            self._sympy_expr = sympify(expr_str, evaluate=True) # evaluate=True to simplify constants etc.
 
             self.output_var = symbols(output_var_str)
             
@@ -227,14 +148,23 @@ class MathFunction(SceneObject):
             self.num_domain_vars = len(self.domain_vars)
             
             if self.num_domain_vars > 2:
-                raise ValueError("Functions with more than two independent variables are not supported.")
+                # Still allow parsing but prevent plotting
+                self.output_widget.write_error("Functions with more than two independent variables are not supported.")
+                self.num_domain_vars = -1 # Mark as unplottable
+                return
             
-            if self.num_domain_vars > 0:
-                self._callable_func = lambdify(self.domain_vars, self._sympy_expr, 'numpy')
+            # Create the callable function for numerical evaluation
+            self._callable_func = lambdify(self.domain_vars, self._sympy_expr, 'numpy')
 
         except (SympifyError, ValueError, TypeError) as e:
-            raise ValueError(f"Error processing equation: {e}") from e
-
+            # Clear callable if parsing fails, and report error
+            self._callable_func = None
+            self.domain_vars = []
+            self.output_var = None
+            self._sympy_expr = None
+            self.num_domain_vars = -1 # Mark as unplottable
+            if self.output_widget:
+                self.output_widget.write_error(f"Error parsing equation '{equation_str}': {e}")
 
 
     def to_dict(self):
@@ -243,19 +173,25 @@ class MathFunction(SceneObject):
         return d
 
     def _generate_line_vertices(self, domain_range: tuple, indep_axis: str, output_axis: str, const_axis: str = None):
-        """Generates vertices for a 1-variable function."""
+        """Generates vertices for a 1-variable function or a constant."""
         vertices = []
-        if self._callable_func is None or self.num_domain_vars != 1:
+        if self._callable_func is None:
             self.vertices = np.array([], dtype=np.float32)
             return
 
         domain_values = np.linspace(domain_range[0], domain_range[1], self.points)
         
-        indep_var_str = str(self.domain_vars[0])
-        
         for val in domain_values:
             try:
-                out_val = self._callable_func(val)
+                # Call function with or without argument based on num_domain_vars
+                if self.num_domain_vars == 1:
+                    out_val = self._callable_func(val)
+                elif self.num_domain_vars == 0:
+                    out_val = self._callable_func()
+                else:
+                    # Should not be reached if num_domain_vars is validated
+                    continue
+
                 point = {'x': 0.0, 'y': 0.0, 'z': 0.0}
                 
                 point[indep_axis] = val
@@ -263,7 +199,7 @@ class MathFunction(SceneObject):
                 
                 vertices.extend([point['x'], point['y'], point['z'], 1, 1, 1]) # White color
             except Exception:
-                pass 
+                pass # Skip points that cause errors (e.g., division by zero)
         
         self.vertices = np.array(vertices, dtype=np.float32)
         self.is_dirty = True
@@ -344,27 +280,34 @@ class MathFunction(SceneObject):
         self.vertices = np.array(vertices, dtype=np.float32)
         self.is_dirty = True
 
-    def regenerate(self, new_equation):
-        # Clear existing sympy data and callable function
+    def regenerate(self, new_equation_str: str):
+        # Clear existing sympy data and callable function before attempting to parse
         self.domain_vars = []
         self.output_var = None
         self._sympy_expr = None
         self._callable_func = None
-        self.num_domain_vars = 0
+        self.num_domain_vars = -1 # Use -1 to indicate "not parsed yet"
 
-        # Set the new equation and re-parse/lambdify
-        self.equation = new_equation
-        if isinstance(new_equation, str):
-            self.equation_str = new_equation
-            self._parse_string_and_lambdify()
-        elif isinstance(new_equation, EquationNode):
-            self.equation_str = "AST-based function" 
-            self._parse_ast_and_lambdify(new_equation)
-        else:
-            raise TypeError("Equation must be a string or an EquationNode")
+        # Parse the new string
+        self._parse_and_lambdify(new_equation_str)
 
+        # If parsing failed, or resulted in unplottable num_domain_vars, clear vertices and stop.
+        if self._callable_func is None or self.num_domain_vars == -1:
+            self.vertices = np.array([], dtype=np.float32)
+            self.is_dirty = True
+            return
+        
         # Re-generate vertices based on the new equation
-        if self.num_domain_vars == 1:
+        if self.num_domain_vars == 0: # Constant function, e.g., y=2
+            self.Mode = Mode.LINE_STRIP
+            self.ProgramID = ProgramID.BASIC_3D
+            output_var_str = str(self.output_var)
+            # Default independent axis if not specified (e.g., for y=2, plot against x)
+            indep_axis = 'x' if output_var_str != 'x' else 'y'
+            all_axes = {'x', 'y', 'z'}
+            const_axis_str = (all_axes - {indep_axis, output_var_str}).pop() # Need a const axis for 3D drawing
+            self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_axis, output_axis=output_var_str, const_axis=const_axis_str)
+        elif self.num_domain_vars == 1: # 1-variable function, e.g., y=cos(x)
             self.Mode = Mode.LINE_STRIP
             self.ProgramID = ProgramID.BASIC_3D
             indep_var_str = str(self.domain_vars[0])
@@ -378,21 +321,22 @@ class MathFunction(SceneObject):
                 const_axis_str = (all_axes - present_vars).pop()
                 
             self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_var_str, output_axis=output_var_str, const_axis=const_axis_str)
-        elif self.num_domain_vars == 2:
+        elif self.num_domain_vars == 2: # 2-variable function, e.g., z=x^2+y^2
             self.Mode = Mode.TRIANGLES
             self.ProgramID = ProgramID.SURFACE
             self._generate_surface_vertices()
-        else:
-            self.ProgramID = ProgramID.BASIC_3D
+        else: # Should not happen if num_domain_vars is properly handled
+            self.vertices = np.array([], dtype=np.float32) # Clear vertices if no plot type matches
         
         self.is_dirty = True
 
 
     def update_for_plane(self, plane: str, h_range: tuple, v_range: tuple):
         """Called by the renderer to update the function for the current 2D view."""
+        # This logic is for 1-variable functions. Constants are handled by initial generation.
         if self.num_domain_vars != 1:
-            if self.vertices.size > 0 and self.num_domain_vars > 1:
-                pass # 3D surfaces are always visible
+            if self.vertices.size > 0 and self.num_domain_vars > 0:
+                pass # 3D surfaces and constants are always visible
             else:
                 self.vertices = np.array([], dtype=np.float32)
                 self.is_dirty = True

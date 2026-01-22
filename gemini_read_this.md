@@ -1,7 +1,6 @@
 Hi Gemini. 
-My name is Austin and I am in highschool going into college.
-this folder contains a project that is important for me and my mathematical journey
-its going to be my calculator, similar to desmos but larger in scale.
+My name is Austin.
+this gonna be my calculator, similar to desmos but larger in scale (not in polish).
 everything lives in a 3d space but if I need 2d I change the perspective.
 Id like to use pyside6 for a gui implementation.
 its important to me that I know the tool inside and out so I don't want you to generate massive amounts of the project unless I explicitly ask for that.
@@ -43,7 +42,10 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   mathematical objects that you build and edit directly. This is a much more powerful and intuitive concept, similar to how modern calculator       
   interfaces work.
   The core idea is that we are not typing code; we are visually building an Abstract Syntax Tree (AST)
-  The core idea is that we are not typing code; we are visually building an Abstract Syntax Tree (AST).
+  
+  The goal is to have the AST's responsibility end with the
+  creation of a valid mathematical string. The MathFunction object will only know how to parse that string with SymPy, keeping the two domains
+  cleanly separated.
 
   ---
 
