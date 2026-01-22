@@ -10,7 +10,7 @@ The architecture is composed of three main parts:
 """
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout
-from PySide6.QtGui import QKeyEvent, QPainter, QColor, QFont, QMouseEvent
+from PySide6.QtGui import QKeyEvent, QPainter, QColor, QFont, QMouseEvent, QFontMetrics
 from PySide6.QtCore import Signal, Qt, QRectF, QPointF
 
 from ast_nodes import (
@@ -37,6 +37,7 @@ class ExpressionView(QWidget):
         
         self.font = QFont("Arial", 14)
         self.op_font = QFont("Arial", 14)
+        self.sup_font = QFont("Arial", 10)
         self.padding = 5 # General padding
 
         # This will store the calculated layout rectangles for each node
@@ -222,20 +223,32 @@ class ExpressionView(QWidget):
         elif isinstance(node, PlaceholderNode):
             rect = QRectF(0, 0, 15, metrics.height())
         elif isinstance(node, (BinaryOpNode, EquationNode)):
-            left_rect = self._calculate_rect(node.left)
-            right_rect = self._calculate_rect(node.right)
-            
-            op_text = f" {node.op} " if isinstance(node, BinaryOpNode) else " = "
-            op_width = self.fontMetrics().horizontalAdvance(op_text)
-            
-            if isinstance(node, BinaryOpNode) and node.op == '/':
-                total_width = max(left_rect.width(), right_rect.width())
-                total_height = left_rect.height() + self.padding + metrics.height() + self.padding + right_rect.height()
+            if isinstance(node, BinaryOpNode) and node.op == '^':
+                left_rect = self._calculate_rect(node.left)
+                
+                original_font = self.font
+                self.font = self.sup_font
+                right_rect = self._calculate_rect(node.right)
+                self.font = original_font
+                
+                total_width = left_rect.width() + right_rect.width() + self.padding / 2
+                total_height = left_rect.height() + right_rect.height() * 0.5
                 rect = QRectF(0, 0, total_width, total_height)
             else:
-                total_width = left_rect.width() + op_width + right_rect.width()
-                max_height = max(left_rect.height(), right_rect.height())
-                rect = QRectF(0, 0, total_width, max_height)
+                left_rect = self._calculate_rect(node.left)
+                right_rect = self._calculate_rect(node.right)
+                
+                op_text = f" {node.op} " if isinstance(node, BinaryOpNode) else " = "
+                op_width = self.fontMetrics().horizontalAdvance(op_text)
+                
+                if isinstance(node, BinaryOpNode) and node.op == '/':
+                    total_width = max(left_rect.width(), right_rect.width())
+                    total_height = left_rect.height() + self.padding + metrics.height() + self.padding + right_rect.height()
+                    rect = QRectF(0, 0, total_width, total_height)
+                else:
+                    total_width = left_rect.width() + op_width + right_rect.width()
+                    max_height = max(left_rect.height(), right_rect.height())
+                    rect = QRectF(0, 0, total_width, max_height)
         elif isinstance(node, UnaryOpNode):
             operand_rect = self._calculate_rect(node.operand)
             op_text = node.op
@@ -295,29 +308,39 @@ class ExpressionView(QWidget):
             left_rect = self.layout_rects.get(node.left, QRectF())
             right_rect = self.layout_rects.get(node.right, QRectF())
             
-            op_text = f" {node.op} " if isinstance(node, BinaryOpNode) else " = "
-            op_width = self.fontMetrics().horizontalAdvance(op_text)
-            
-            if isinstance(node, BinaryOpNode) and node.op == '/':
-                left_start_x = position.x() + (node_rect.width() - left_rect.width()) / 2
-                self._draw_node(painter, node.left, QPointF(left_start_x, position.y()))
-                
-                bar_y = position.y() + left_rect.height() + self.padding / 2
-                painter.drawLine(QPointF(position.x(), bar_y), QPointF(position.x() + node_rect.width(), bar_y))
-
-                right_start_x = position.x() + (node_rect.width() - right_rect.width()) / 2
-                self._draw_node(painter, node.right, QPointF(right_start_x, bar_y + self.padding / 2 + self.fontMetrics().height()))
-            else:
-                left_child_y = position.y() + (node_rect.height() - left_rect.height()) / 2
+            if isinstance(node, BinaryOpNode) and node.op == '^':
+                left_child_y = position.y() + right_rect.height() * 0.5
                 self._draw_node(painter, node.left, QPointF(position.x(), left_child_y))
                 
-                current_x = position.x() + left_rect.width()
-                painter.setFont(self.op_font)
-                painter.drawText(QPointF(current_x, text_v_center + self.fontMetrics().ascent() / 2), op_text)
+                original_font = painter.font()
+                painter.setFont(self.sup_font)
+                right_child_y = position.y()
+                self._draw_node(painter, node.right, QPointF(position.x() + left_rect.width() + self.padding / 2, right_child_y))
+                painter.setFont(original_font)
+            else:
+                op_text = f" {node.op} " if isinstance(node, BinaryOpNode) else " = "
+                op_width = self.fontMetrics().horizontalAdvance(op_text)
+                
+                if isinstance(node, BinaryOpNode) and node.op == '/':
+                    left_start_x = position.x() + (node_rect.width() - left_rect.width()) / 2
+                    self._draw_node(painter, node.left, QPointF(left_start_x, position.y()))
+                    
+                    bar_y = position.y() + left_rect.height() + self.padding / 2
+                    painter.drawLine(QPointF(position.x(), bar_y), QPointF(position.x() + node_rect.width(), bar_y))
 
-                current_x += op_width
-                right_child_y = position.y() + (node_rect.height() - right_rect.height()) / 2
-                self._draw_node(painter, node.right, QPointF(current_x, right_child_y))
+                    right_start_x = position.x() + (node_rect.width() - right_rect.width()) / 2
+                    self._draw_node(painter, node.right, QPointF(right_start_x, bar_y + self.padding / 2 + self.fontMetrics().height()))
+                else:
+                    left_child_y = position.y() + (node_rect.height() - left_rect.height()) / 2
+                    self._draw_node(painter, node.left, QPointF(position.x(), left_child_y))
+                    
+                    current_x = position.x() + left_rect.width()
+                    painter.setFont(self.op_font)
+                    painter.drawText(QPointF(current_x, text_v_center + self.fontMetrics().ascent() / 2), op_text)
+
+                    current_x += op_width
+                    right_child_y = position.y() + (node_rect.height() - right_rect.height()) / 2
+                    self._draw_node(painter, node.right, QPointF(current_x, right_child_y))
         elif isinstance(node, UnaryOpNode):
             op_text = node.op
             op_width = self.fontMetrics().horizontalAdvance(op_text)
