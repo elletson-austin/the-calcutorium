@@ -35,12 +35,6 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   adding a UI element to the MainWindow and writing a corresponding method to modify the Scene,
   without needing to touch the complex rendering code in the View.
 
-  Dont paint yourself into a corner. keep everything as applical to the widest array of uses.
-  Have an extremely agnostic and unopinionated approach
-  # Important below
-  The expression itself isn't a string to be parsed; it's a structured tree of
-  mathematical objects that you build and edit directly. This is a much more powerful and intuitive concept, similar to how modern calculator       
-  interfaces work.
   The core idea is that we are not typing code; we are visually building an Abstract Syntax Tree (AST)
   
   The goal is to have the AST's responsibility end with the
@@ -109,7 +103,6 @@ Project Architecture: A Model-View-Controller (MVC) Approach
   This approach is far more robust and is the standard for building modern symbolic editors. It completely avoids the ambiguity and complexity of   
   parsing strings.
 
-TODO add more particle sims
-TODO add polar and implicit function compatibility
-TODO add the ability to graph functions like f(x,y) = some z val and it looks like a mesh
+TODO refine the abstract syntax tree
 
+TODO fix camera bugs.
