@@ -2,12 +2,13 @@ from enum import Enum, auto
 import numpy as np
 from sympy import (
     symbols, lambdify, sympify, SympifyError, Function as SympyFunction,
-    sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, exp, log, sqrt, Integer
-)
-from render_types import CameraMode
-from ast_nodes import (
-    EquationNode, Node, ConstantNode, VariableNode, BinaryOpNode,
-    PlaceholderNode, UnaryOpNode, FunctionNode
+    sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, exp, log, sqrt, cbrt,
+    sec, csc, cot, asec, acsc, acot, atan2,
+    asinh, acosh, atanh, asech, acsch, acoth,
+    Abs, factorial, factorial2, gamma, Min, Max, sign,
+    floor, ceiling, frac,
+    binomial, fibonacci, lucas,
+    gcd, lcm, isprime, prime
 )
 
 
@@ -100,7 +101,7 @@ class Axes(SceneObject):
         self.ProgramID = ProgramID.BASIC_3D
 
 class MathFunction(SceneObject):
-    def __init__(self, equation_str: str, points: int = 100, output_widget=None):
+    def __init__(self, equation_str: str, points: int = 500, output_widget=None):
         super().__init__(Mode=Mode.LINE_STRIP)
         self.points = points
         self.output_widget = output_widget

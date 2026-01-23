@@ -534,6 +534,7 @@ class Renderer:
             else:
                 m = moderngl.POINTS
 
+            self.ctx.line_width = 2.0
             ro.vao.render(mode=m)
 
 
