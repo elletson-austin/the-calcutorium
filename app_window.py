@@ -158,15 +158,12 @@ class MainWindow(QMainWindow):
             math_function.regenerate(new_equation)
             # Update name to reflect new equation
             math_function.name = new_equation 
-            if editor:
-                editor.update_label()
         except Exception as e:
             self.output_widget.write_error(f"Error regenerating function: {e}")
             # Revert the function and editor to the old state
             math_function.regenerate(old_equation)
             if editor:
                 editor.equation_input.setText(old_equation)
-                editor.update_label()
 
 
     def handle_command(self, command: str):

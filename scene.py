@@ -76,7 +76,6 @@ class Scene:
                 lorenz.name = "Lorenz Attractor"
                 self.objects.append(lorenz)
 
-
 class Axes(SceneObject):
 
     def __init__(self, length: float = 10.0):
@@ -437,6 +436,7 @@ class Grid(SceneObject):
             self.is_dirty = True
 
 class LorenzAttractor(SceneObject):
+
     def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):
         super().__init__(Mode=Mode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
         self.sigma = sigma
@@ -458,3 +458,11 @@ class LorenzAttractor(SceneObject):
         initial_points[:, :3] += [1.0, 1.0, 1.0]
         initial_points[:, 3] = 1.0
         return initial_points
+    
+class Quad(SceneObject):
+    def __init__(self, ProgramID: ProgramID, x0: float, x1: float, y0: float, y1: float):
+        super().__init__(Mode=Mode.TRIANGLES, dynamic=True)
+        self.x0 = x0
+        self.x1 = x1
+        self.y0 = y0
+        self.y1 = y1

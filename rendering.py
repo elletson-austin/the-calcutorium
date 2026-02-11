@@ -1,13 +1,14 @@
-import moderngl
-import numpy as np
+
 from enum import Enum, auto
 from dataclasses import dataclass, field
+
+import moderngl
+import numpy as np
 from PySide6.QtOpenGLWidgets import QOpenGLWidget   
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
+
 from scene import SceneObject, LorenzAttractor, ProgramID, Mode, MathFunction, Grid
-
-
 from render_types import Projection, SnapMode, CameraMode
 
 @dataclass

@@ -14,9 +14,7 @@ class FunctionEditorWidget(QWidget):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(5)
 
-        self.label = QLabel()
         self.update_label()
-        self.layout.addWidget(self.label)
 
         self.equation_input = QLineEdit()
         self.equation_input.setText(self.math_function.equation_str)
@@ -24,23 +22,10 @@ class FunctionEditorWidget(QWidget):
         
         self.layout.addWidget(self.equation_input)
 
-    def update_label(self):
-        if self.math_function.output_var and self.math_function.domain_vars:
-            domain_vars_str = ", ".join(sorted([str(v) for v in self.math_function.domain_vars]))
-            output_var_str = str(self.math_function.output_var)
-            self.label.setText(f"f({domain_vars_str}) = {output_var_str}")
-        else:
-            # Fallback for functions without clear variables (e.g. just "5")
-            self.label.setText("f =")
-
     def on_equation_changed(self):
         new_equation = self.equation_input.text()
         if new_equation != self.math_function.equation_str:
             self.equation_changed.emit(self.math_function, new_equation)
 
     def update_equation_text(self):
-        """
-        Public method to allow MainWindow to update the text if the
-        function is changed programmatically elsewhere.
-        """
         self.equation_input.setText(self.math_function.equation_str)
