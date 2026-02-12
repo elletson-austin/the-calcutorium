@@ -1,6 +1,6 @@
 from enum import Enum, auto
 import numpy as np
-from render_types import CameraMode
+from .render_types import CameraMode
 from sympy import (
     symbols, lambdify, sympify, SympifyError, Function as SympyFunction,
     sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, exp, log, sqrt, cbrt,
@@ -13,7 +13,7 @@ from sympy import (
 )
 
 
-class Mode(Enum):
+class RenderMode(Enum):
     POINTS = auto()
     LINES = auto()
     LINE_STRIP = auto()
@@ -31,14 +31,14 @@ class ProgramID(Enum):
 
 class SceneObject:
     def __init__(self, 
-                 Mode: Mode, 
+                 RenderMode: RenderMode, 
                  visibility:bool = True, 
                  dynamic: bool = False,
                  ProgramID: ProgramID = ProgramID.BASIC_3D):
         self.visibility = visibility
         self.dynamic = dynamic
         self.ProgramID = ProgramID
-        self.Mode = Mode
+        self.RenderMode = RenderMode
 
     def to_dict(self):
         return {'type': self.__class__.__name__}
@@ -80,7 +80,7 @@ class Axes(SceneObject):
 
     def __init__(self, length: float = 10.0):
 
-        super().__init__(Mode=Mode.LINES)
+        super().__init__(RenderMode=RenderMode.LINES)
         self.length = length
         # Each line is two points with RGB color
 
@@ -96,13 +96,13 @@ class Axes(SceneObject):
             0, 0,  length, 0, 0, 1,
         ], dtype=np.float32)
 
-        self.mode = Mode.LINES
+        self.RenderMode = RenderMode.LINES
         self.dynamic = False
         self.ProgramID = ProgramID.BASIC_3D
 
 class MathFunction(SceneObject):
     def __init__(self, equation_str: str, points: int = 500, output_widget=None):
-        super().__init__(Mode=Mode.LINE_STRIP)
+        super().__init__(RenderMode=RenderMode.LINE_STRIP)
         self.equation_str = equation_str
         self.points = points
         self.output_widget = output_widget
@@ -122,7 +122,7 @@ class MathFunction(SceneObject):
         self.is_dirty = True
 
         if self.num_domain_vars == 1:
-            self.Mode = Mode.LINE_STRIP
+            self.RenderMode = RenderMode.LINE_STRIP
             indep_var_str = str(self.domain_vars[0])
             output_var_str = str(self.output_var)
 
@@ -133,7 +133,7 @@ class MathFunction(SceneObject):
                 
             self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_var_str, output_axis=output_var_str, const_axis=const_axis_str)
         elif self.num_domain_vars == 2:
-            self.Mode = Mode.TRIANGLES
+            self.RenderMode = RenderMode.TRIANGLES
             self.ProgramID = ProgramID.SURFACE
             # For 3D plots, we generate vertices once with a fixed range
             self._generate_surface_vertices()
@@ -337,7 +337,7 @@ class MathFunction(SceneObject):
     
 class Grid(SceneObject):
     def __init__(self, h_range=(-250, 250), v_range=(-250, 250), spacing=1.0, plane='xy'):
-        super().__init__(Mode=Mode.LINES)
+        super().__init__(RenderMode=RenderMode.LINES)
         self.h_range = h_range
         self.v_range = v_range
         self.spacing = spacing
@@ -438,7 +438,7 @@ class Grid(SceneObject):
 class LorenzAttractor(SceneObject):
 
     def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):
-        super().__init__(Mode=Mode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
+        super().__init__(RenderMode=RenderMode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
         self.sigma = sigma
         self.rho = rho
         self.beta = beta
@@ -461,7 +461,7 @@ class LorenzAttractor(SceneObject):
     
 class Quad(SceneObject):
     def __init__(self, ProgramID: ProgramID, x0: float, x1: float, y0: float, y1: float):
-        super().__init__(Mode=Mode.TRIANGLES, dynamic=True)
+        super().__init__(RenderMode=RenderMode.TRIANGLES, dynamic=True)
         self.x0 = x0
         self.x1 = x1
         self.y0 = y0

@@ -5,11 +5,11 @@ import json
 import sys
 
 # Import our custom components
-from scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
-from rendering import RenderSpace, CameraMode, SnapMode
-from input_widget import InputWidget
-from function_editor_widget import FunctionEditorWidget
-from output_widget import OutputWidget
+from .scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
+from .rendering import RenderSpace, CameraMode, SnapMode
+from .input_widget import InputWidget
+from .function_editor_widget import FunctionEditorWidget
+from .output_widget import OutputWidget
 
 class TabKeyEventFilter(QObject):
     def __init__(self, render_widget, parent=None):

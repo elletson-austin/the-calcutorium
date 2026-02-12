@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QLabel, QHBoxLayout
 from PySide6.QtCore import Signal, Qt
-from scene import MathFunction
+from .scene import MathFunction
 
 class FunctionEditorWidget(QWidget):
     equation_changed = Signal(MathFunction, str)
