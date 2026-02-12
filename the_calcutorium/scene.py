@@ -1,6 +1,5 @@
 from enum import Enum, auto
 import numpy as np
-from .render_types import CameraMode
 from sympy import (
     symbols, lambdify, sympify, SympifyError, Function as SympyFunction,
     sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, exp, log, sqrt, cbrt,
@@ -32,13 +31,15 @@ class ProgramID(Enum):
 class SceneObject:
     def __init__(self, 
                  RenderMode: RenderMode, 
-                 visibility:bool = True, 
                  dynamic: bool = False,
-                 ProgramID: ProgramID = ProgramID.BASIC_3D):
-        self.visibility = visibility
+                 ProgramID: ProgramID = ProgramID.BASIC_3D,
+                 visibility:bool = True, 
+                 Is2d = False):
+        self.RenderMode = RenderMode
         self.dynamic = dynamic
         self.ProgramID = ProgramID
-        self.RenderMode = RenderMode
+        self.visibility = visibility # arbitrary visibility 
+        self.Is2d = Is2d             # visibility determined by dimension
 
     def to_dict(self):
         return {'type': self.__class__.__name__}
@@ -79,11 +80,10 @@ class Scene:
 class Axes(SceneObject):
 
     def __init__(self, length: float = 10.0):
-
-        super().__init__(RenderMode=RenderMode.LINES)
+        super().__init__(RenderMode=RenderMode.LINES, Is2d=False)
         self.length = length
-        # Each line is two points with RGB color
 
+        # Each line is two points with RGB color
         self.vertices = np.array([
             # X axis (red)
             -length, 0, 0, 1, 0, 0,

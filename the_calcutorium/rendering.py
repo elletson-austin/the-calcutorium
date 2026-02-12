@@ -8,8 +8,8 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
 
-from .scene import SceneObject, LorenzAttractor, ProgramID, Mode, MathFunction, Grid
-from .render_types import Projection, SnapMode, CameraMode
+from .scene import SceneObject, LorenzAttractor, ProgramID, RenderMode, MathFunction, Grid
+from .render_types import Projection, SnapMode
 
 @dataclass
 class InputState: # Tracks the state of the input
@@ -24,43 +24,20 @@ class InputState: # Tracks the state of the input
     right_mouse_pressed: bool = False
     scroll_delta: float = 0.0
 
-
-class Camera: 
-    
-    def __init__(self, 
+class Camera3D:
+    def __init__(self,
                  position_center: np.ndarray = None,
                  rotation: np.ndarray = None,
-                 fov: float = 60.0, distance: float = 50.0,
-                 mode: CameraMode = CameraMode.ThreeD):
-        
-        if position_center is not None:
-            self.position_center = position_center
-        else:
-            self.position_center = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+                 distance: float = 50.0,
+                 fov: float = 60.0):
 
-        if rotation is not None:
-            self.rotation = rotation
-        else:
-            self.rotation = np.array([0.0, 0.0, 0.0], dtype=np.float32)
-
-        self.fov = fov
+        self.position_center = np.array([0.0, 0.0, 0.0], dtype=np.float32) if position_center is None else position_center
+        self.rotation = np.array([-30.0, 45.0, 0.0], dtype=np.float32) if rotation is None else rotation
         self.distance = distance
-        self.projection = Projection.Orthographic
-        self.snap_mode = SnapMode.XY
-        self.mode = mode
+        self.fov = fov
+        self.projection = Projection.Perspective
 
-    # Calculate the camera position based on the orientation, distance and center
-    def get_position(self) -> np.ndarray: 
-        if self.mode == CameraMode.TwoD:
-            pos = self.position_center.copy()
-            if self.snap_mode == SnapMode.XY:
-                pos[2] += self.distance
-            elif self.snap_mode == SnapMode.XZ:
-                pos[1] += self.distance
-            elif self.snap_mode == SnapMode.YZ:
-                pos[0] += self.distance
-            return pos
-        
+    def get_position(self) -> np.ndarray:
         pitch = np.radians(self.rotation[0])
         yaw = np.radians(self.rotation[1])
 
@@ -70,91 +47,165 @@ class Camera:
 
         return self.position_center + np.array([x, y, z], dtype=np.float32)
 
+    def get_view_matrix(self) -> np.ndarray:
+        cam_pos = self.get_position()
+        target = self.position_center
+        world_up = np.array([0, 1, 0], dtype=np.float32)
+
+        forward = target - cam_pos
+        norm_forward = np.linalg.norm(forward)
+        if norm_forward > 1e-6:
+            forward /= norm_forward
+
+        right = np.cross(forward, world_up)
+        norm_right = np.linalg.norm(right)
+        if norm_right > 1e-6:
+            right /= norm_right
+
+        up = np.cross(right, forward)
+
+        view = np.eye(4, dtype=np.float32)
+        view[0, :3] = right
+        view[1, :3] = up
+        view[2, :3] = -forward
+        view[0, 3] = -np.dot(right, cam_pos)
+        view[1, 3] = -np.dot(up, cam_pos)
+        view[2, 3] = np.dot(forward, cam_pos)
+
+        return view.T.flatten()
+
+    def get_projection_matrix(self, width, height, h_range=None, v_range=None):
+        if self.projection == Projection.Perspective:
+            aspect_ratio = width / height if height > 0 else 1.0
+            fov_rad = np.radians(self.fov)
+            near, far = 1.0, 500.0
+            focal_len = 1.0 / np.tan(fov_rad / 2.0)
+
+            proj = np.zeros((4, 4), dtype=np.float32)
+            proj[0, 0] = focal_len / aspect_ratio
+            proj[1, 1] = focal_len
+            proj[2, 2] = (far + near) / (near - far)
+            proj[2, 3] = (2.0 * far * near) / (near - far)
+            proj[3, 2] = -1.0
+            return proj.T.flatten()
+        else: # Orthographic
+            aspect = width / height if height > 0 else 1.0
+            view_height = self.distance
+            top, bottom = view_height / 2.0, -view_height / 2.0
+            right, left = top * aspect, -top * aspect
+            near, far = -1000.0, 1000.0
+
+            proj = np.eye(4, dtype=np.float32)
+            proj[0, 0] = 2 / (right - left)
+            proj[1, 1] = 2 / (top - bottom)
+            proj[2, 2] = -2 / (far - near)
+            proj[0, 3] = -(right + left) / (right - left)
+            proj[1, 3] = -(top + bottom) / (top - bottom)
+            proj[2, 3] = -(far + near) / (far - near)
+            return proj.T.flatten()
+
+    def update(self, input_state: InputState, dt: float, width: int, height: int):
+        # --- Mouse Rotation ---
+        if input_state.left_mouse_pressed:
+            self.rotation[0] += input_state.mouse_delta[1] # Pitch
+            self.rotation[1] += input_state.mouse_delta[0] # Yaw
+            self.rotation[0] = np.clip(self.rotation[0], -89.0, 89.0)
+            self.rotation[1] %= 360.0
+
+        # --- Mouse Zoom ---
+        if abs(input_state.scroll_delta) > 0:
+            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1/1.1
+            self.distance = np.clip(self.distance * zoom_factor, 1.0, 500.0)
+
+        # --- Keyboard Movement (WASD) ---
+        keys = input_state.keys_held
+        move_speed = dt * 20.0
+        cam_pos = self.get_position()
+        forward = self.position_center - cam_pos
+        forward[1] = 0
+        if np.linalg.norm(forward) > 1e-6:
+            forward /= np.linalg.norm(forward)
+
+        right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
+        if np.linalg.norm(right) > 1e-6:
+            right /= np.linalg.norm(right)
+
+        if Qt.Key.Key_W in keys:
+            self.position_center += forward * move_speed
+        if Qt.Key.Key_S in keys:
+            self.position_center -= forward * move_speed
+        if Qt.Key.Key_A in keys:
+            self.position_center -= right * move_speed
+        if Qt.Key.Key_D in keys:
+            self.position_center += right * move_speed
+
+class Camera2D:
+    def __init__(self,
+                 position_center: np.ndarray = None,
+                 distance: float = 50.0,
+                 snap_mode: SnapMode = SnapMode.XY):
+        self.position_center = np.array([0.0, 0.0, 0.0], dtype=np.float32) if position_center is None else position_center
+        self.distance = distance
+        self.snap_mode = snap_mode
+        self.projection = Projection.Orthographic # Always orthographic
+
+    def get_position(self) -> np.ndarray:
+        pos = self.position_center.copy()
+        if self.snap_mode == SnapMode.XY:
+            pos[2] += self.distance
+        elif self.snap_mode == SnapMode.XZ:
+            pos[1] += self.distance
+        elif self.snap_mode == SnapMode.YZ:
+            pos[0] += self.distance
+        return pos
 
     def get_view_matrix(self) -> np.ndarray:
         cam_pos = self.get_position()
         target = self.position_center
-        
-        if self.mode == CameraMode.TwoD:
-            if self.snap_mode == SnapMode.XY:
-                world_up = np.array([0, 1, 0], dtype=np.float32)
-            elif self.snap_mode == SnapMode.XZ:
-                world_up = np.array([0, 0, 1], dtype=np.float32)
-            elif self.snap_mode == SnapMode.YZ:
-                world_up = np.array([0, 1, 0], dtype=np.float32)
+
+        if self.snap_mode == SnapMode.XY:
+            world_up = np.array([0, 1, 0], dtype=np.float32)
+        elif self.snap_mode == SnapMode.XZ:
+            world_up = np.array([0, 0, 1], dtype=np.float32)
+        elif self.snap_mode == SnapMode.YZ:
+            world_up = np.array([0, 1, 0], dtype=np.float32)
         else:
             world_up = np.array([0, 1, 0], dtype=np.float32)
-        
+
+
         forward = target - cam_pos
-        # Normalize forward vector, handling the case where it's zero.
         norm_forward = np.linalg.norm(forward)
         if norm_forward > 1e-6:
             forward /= norm_forward
-        
+
         right = np.cross(forward, world_up)
-        # Normalize right vector
         norm_right = np.linalg.norm(right)
         if norm_right > 1e-6:
             right /= norm_right
-        
+
         up = np.cross(right, forward)
-        
+
         view = np.eye(4, dtype=np.float32)
-        
-        # Rotation part
         view[0, :3] = right
         view[1, :3] = up
         view[2, :3] = -forward
-        
-        # Translation part - ALL NEGATIVE
         view[0, 3] = -np.dot(right, cam_pos)
         view[1, 3] = -np.dot(up, cam_pos)
-        view[2, 3] = np.dot(forward, cam_pos)  
-        
-        # Bottom row should be [0, 0, 0, 1] - already set by np.eye()
-        
+        view[2, 3] = np.dot(forward, cam_pos)
+
         return view.T.flatten()
-    
 
-    def _perspective_matrix(self, width, height) -> np.ndarray: 
-        if height == 0:
-            aspect_ratio = 1.0
-        else:
-            aspect_ratio = width / height
-        fov_rad = np.radians(self.fov)  # Field of view in radians
-        near = 1.0     # Near clipping plane (minimum render distance)
-        far = 500.0    # Far clipping plane (maximum render distance)
-        focal_len = 1.0 / np.tan(fov_rad / 2.0)  # Calculate focal length (controls zoom)
-
-        proj = np.zeros((4, 4), dtype=np.float32)
-        proj[0, 0] = focal_len / aspect_ratio
-        proj[1, 1] = focal_len
-        proj[2, 2] = (far + near) / (near - far)
-        proj[2, 3] = (2.0 * far * near) / (near - far)
-        proj[3, 2] = -1.0
-        
-        return proj.T.flatten()
-        
-
-    def _orthographic_matrix(self, width, height, h_range=None, v_range=None):
-        if self.mode == CameraMode.TwoD and h_range is not None and v_range is not None:
+    def get_projection_matrix(self, width, height, h_range=None, v_range=None):
+        if h_range is not None and v_range is not None:
             left, right = h_range
             bottom, top = v_range
         else:
-            if height == 0:
-                aspect = 1.0
-            else:
-                aspect = width / height
-            
+            aspect = width / height if height > 0 else 1.0
             view_height = self.distance
-            top = view_height / 2.0
-            bottom = -view_height / 2.0
-            right = top * aspect
-            left = -top * aspect
+            top, bottom = view_height / 2.0, -view_height / 2.0
+            right, left = top * aspect, -top * aspect
 
-        near   = -1000.0
-        far    =  1000.0
-
+        near, far = -1000.0, 1000.0
         proj = np.eye(4, dtype=np.float32)
         proj[0, 0] = 2 / (right - left)
         proj[1, 1] = 2 / (top - bottom)
@@ -162,16 +213,29 @@ class Camera:
         proj[0, 3] = -(right + left) / (right - left)
         proj[1, 3] = -(top + bottom) / (top - bottom)
         proj[2, 3] = -(far + near) / (far - near)
-
         return proj.T.flatten()
-    
 
-    def get_projection_matrix(self, width, height, h_range=None, v_range=None):
-        
-        if self.projection == Projection.Perspective:
-            return self._perspective_matrix(width, height)
-        else:
-            return self._orthographic_matrix(width, height, h_range=h_range, v_range=v_range)
+    def update(self, input_state: InputState, dt: float, width: int, height: int):
+        # --- Mouse Panning ---
+        if input_state.left_mouse_pressed and height > 0:
+            aspect_ratio = width / height
+            pan_speed_h = self.distance * aspect_ratio / width if width > 0 else 0
+            pan_speed_v = self.distance / height
+
+            if self.snap_mode == SnapMode.XY:
+                self.position_center[0] -= input_state.mouse_delta[0] * pan_speed_h
+                self.position_center[1] += input_state.mouse_delta[1] * pan_speed_v
+            elif self.snap_mode == SnapMode.XZ:
+                self.position_center[0] -= input_state.mouse_delta[0] * pan_speed_h
+                self.position_center[2] -= input_state.mouse_delta[1] * pan_speed_v
+            elif self.snap_mode == SnapMode.YZ:
+                self.position_center[2] -= input_state.mouse_delta[0] * pan_speed_h
+                self.position_center[1] += input_state.mouse_delta[1] * pan_speed_v
+
+        # --- Mouse Zoom ---
+        if abs(input_state.scroll_delta) > 0:
+            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1/1.1
+            self.distance = np.clip(self.distance * zoom_factor, 1.0, 500.0)
 
 
 class ProgramManager: # holds and stores programs that draw points, lines, etc.
@@ -417,7 +481,7 @@ class RenderObject:
         program_id: ProgramID,
         vao: moderngl.VertexArray,
         vbo: moderngl.Buffer,
-        mode: Mode,
+        Rendermode: RenderMode,
         num_vertexes: int,
         compute_shader: moderngl.ComputeShader = None,
         ) -> None:
@@ -425,7 +489,7 @@ class RenderObject:
         self.program_id = program_id
         self.vao = vao
         self.vbo = vbo
-        self.mode = mode
+        self.Rendermode = Rendermode
         self.num_vertexes = num_vertexes
         self.compute_shader = compute_shader
 
@@ -447,12 +511,11 @@ class Renderer:
             vbo = self.ctx.buffer(obj.vertices.tobytes())
             vao = self.ctx.vertex_array(program, [(vbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
-            # ... (uniform setup for compute shader)
             return RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
                 vbo=vbo,
-                mode=obj.Mode,
+                Rendermode=obj.RenderMode,
                 num_vertexes=obj.num_points,
                 compute_shader=compute_shader
             )
@@ -464,7 +527,7 @@ class Renderer:
                 program_id=obj.ProgramID,
                 vao=vao,
                 vbo=vbo,
-                mode=obj.Mode,
+                Rendermode=obj.RenderMode,
                 num_vertexes=len(obj.vertices) // 9
             )
 
@@ -475,7 +538,7 @@ class Renderer:
                 program_id=obj.ProgramID,
                 vao=vao,
                 vbo=vbo,
-                mode=obj.Mode,
+                Rendermode=obj.RenderMode,
                 num_vertexes=len(obj.vertices) // 6
             )
 
@@ -487,7 +550,7 @@ class Renderer:
             ro.num_vertexes = len(obj.vertices) // 6
 
 
-    def render(self, render_objects: list, cam: Camera, width: int, height: int, h_range=None, v_range=None) -> list[RenderObject]:
+    def render(self, render_objects: list, camera, width: int, height: int, h_range=None, v_range=None):
 
         for ro in render_objects:
             if ro.compute_shader:
@@ -496,35 +559,31 @@ class Renderer:
                 ro.compute_shader.run(group_x=group_size)
 
             program = ro.vao.program
-            program["u_view"].write(cam.get_view_matrix())
-            program["u_proj"].write(cam.get_projection_matrix(width, height, h_range=h_range, v_range=v_range))
+            program["u_view"].write(camera.get_view_matrix())
+            program["u_proj"].write(camera.get_projection_matrix(width, height, h_range=h_range, v_range=v_range))
             
             if ro.program_id == ProgramID.SURFACE:
                 program["u_model"].write(np.eye(4, dtype=np.float32).tobytes())
                 program["u_light_pos"].write(np.array([10.0, 20.0, 10.0], dtype=np.float32).tobytes())
-                program["u_view_pos"].write(cam.get_position().tobytes())
+                program["u_view_pos"].write(camera.get_position().tobytes())
 
             if ro.program_id == ProgramID.GRID:
-                alpha_multiplier = 1.0
-                if cam.mode == CameraMode.ThreeD:
-                    alpha_multiplier = 0.2 
-                elif cam.mode == CameraMode.TwoD:
-                    alpha_multiplier = 1.0
+                alpha_multiplier = 0.2 if isinstance(camera, Camera3D) else 1.0
                 if "u_alpha_multiplier" in program:
                     program["u_alpha_multiplier"].value = alpha_multiplier
             else:
                 if "u_alpha_multiplier" in program:
-                    program["u_alpha_multiplier"].value = 1.0 # Ensure other objects are opaque
+                    program["u_alpha_multiplier"].value = 1.0
 
-            if ro.mode == Mode.POINTS:
+            if ro.Rendermode == RenderMode.POINTS:
                 m = moderngl.POINTS
-            elif ro.mode == Mode.LINES:
+            elif ro.Rendermode == RenderMode.LINES:
                 m = moderngl.LINES
-            elif ro.mode == Mode.LINE_STRIP:
+            elif ro.Rendermode == RenderMode.LINE_STRIP:
                 m = moderngl.LINE_STRIP
-            elif ro.mode == Mode.LINE_LOOP:
+            elif ro.Rendermode == RenderMode.LINE_LOOP:
                 m = moderngl.LINE_LOOP
-            elif ro.mode == Mode.TRIANGLES:
+            elif ro.Rendermode == RenderMode.TRIANGLES:
                 m = moderngl.TRIANGLES
             else:
                 m = moderngl.POINTS
@@ -533,146 +592,109 @@ class Renderer:
             ro.vao.render(mode=m)
 
 
-class RenderSpace(QOpenGLWidget):
+class RenderWindow(QOpenGLWidget):
     manual_range_cleared = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.cam: Camera = Camera()
+        self.camera: Camera3D | Camera2D = Camera3D()
         self.input_state: InputState = InputState()
         self.ctx: moderngl.Context = None
         self.scene = None
         self.screen = None
         self.renderer: Renderer = None
-        self.mouse_hovering: bool = False # Track mouse hover state
-        self.manual_ranges = {} # e.g. {'x': (-10, 10), 'y': (-10, 10)}
+        self.mouse_hovering: bool = False
+        self.manual_ranges = {}
 
-        # Set a strong focus policy to receive keyboard events.
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        # Enable mouse tracking to receive enter/leave events
         self.setMouseTracking(True)
-        # Timer to trigger continuous updates for a smooth render loop
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
-        self.timer.start(16) # Approximately 60 FPS
-        self.render_objects: dict = {}  # Map SceneObjects to their RenderObjects
+        self.timer.start(16) # ~60 FPS
+        self.render_objects: dict = {}
 
+    def set_camera(self, camera):
+        self.camera = camera
+        self.update()
 
     def set_scene(self, scene):
         self.scene = scene
 
-
     def initializeGL(self):
         self.makeCurrent()
         self.ctx = moderngl.create_context()
-        self.ctx.enable(moderngl.DEPTH_TEST)
-        self.ctx.enable(moderngl.PROGRAM_POINT_SIZE)
-        self.ctx.enable(moderngl.BLEND) # Enable blending for transparency
+        self.ctx.enable(moderngl.DEPTH_TEST | moderngl.PROGRAM_POINT_SIZE | moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self.renderer = Renderer(self.ctx)
         self.screen = self.ctx.detect_framebuffer()
-
 
     def resizeGL(self, w: int, h: int):
         if self.ctx:
             self.ctx.viewport = (0, 0, w, h)
             self.screen = self.ctx.detect_framebuffer()
 
-
     def paintGL(self):
         self.makeCurrent()
-        if not self.ctx or not self.scene or not self.renderer or not self.screen:
+        if not all([self.ctx, self.scene, self.renderer, self.screen]):
             return
 
         self.screen.use()
-        self.update_camera()
+        self.update_camera(0.016) # Assuming 60fps for now
 
-        # Clear the screen with a dark color
         self.screen.clear(0.0, 0.2, 0.2, 1.0)
         
         width, height = self.width(), self.height()
         if width == 0 or height == 0:
             return
 
-        h_proj_range, v_proj_range = None, None  # For passing to projection matrix
+        h_proj_range, v_proj_range = None, None
 
-        if self.cam.mode == CameraMode.TwoD:
-            # Determine horizontal and vertical axes from snap mode
-            if self.cam.snap_mode == SnapMode.XY:
-                h_axis, v_axis, plane_str = 'x', 'y', 'xy'
-            elif self.cam.snap_mode == SnapMode.XZ:
-                h_axis, v_axis, plane_str = 'x', 'z', 'xz'
-            elif self.cam.snap_mode == SnapMode.YZ:
-                h_axis, v_axis, plane_str = 'z', 'y', 'yz'
-            else:
-                h_axis, v_axis, plane_str = None, None, None
+        if isinstance(self.camera, Camera2D):
+            cam2d = self.camera
+            snap_map = {SnapMode.XY: ('x', 'y', 'xy'), SnapMode.XZ: ('x', 'z', 'xz'), SnapMode.YZ: ('z', 'y', 'yz')}
+            h_axis, v_axis, plane_str = snap_map.get(cam2d.snap_mode, (None, None, None))
 
             if h_axis and v_axis:
                 dynamic_h_range, dynamic_v_range = None, None
-
-                # Check for manual ranges
                 if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
                     h_proj_range = self.manual_ranges[h_axis]
                     v_proj_range = self.manual_ranges[v_axis]
-                    dynamic_h_range = h_proj_range
-                    dynamic_v_range = v_proj_range
-                elif height > 0:  # Auto-ranging
+                    dynamic_h_range, dynamic_v_range = h_proj_range, v_proj_range
+                elif height > 0:
                     aspect = width / height
-                    view_height = self.cam.distance
+                    view_height = cam2d.distance
                     view_width = view_height * aspect
-                    buffer_factor = 1.05
-
+                    buffer = 1.05
                     axis_map = {'x': 0, 'y': 1, 'z': 2}
-                    h_center = self.cam.position_center[axis_map[h_axis]]
-                    v_center = self.cam.position_center[axis_map[v_axis]]
+                    h_center, v_center = cam2d.position_center[axis_map[h_axis]], cam2d.position_center[axis_map[v_axis]]
+                    h_min, h_max = h_center - (view_width / 2) * buffer, h_center + (view_width / 2) * buffer
+                    v_min, v_max = v_center - (view_height / 2) * buffer, v_center + (view_height / 2) * buffer
+                    dynamic_h_range, dynamic_v_range = (h_min, h_max), (v_min, v_max)
 
-                    h_min = h_center - (view_width / 2) * buffer_factor
-                    h_max = h_center + (view_width / 2) * buffer_factor
-                    dynamic_h_range = (h_min, h_max)
-
-                    v_min = v_center - (view_height / 2) * buffer_factor
-                    v_max = v_center + (view_height / 2) * buffer_factor
-                    dynamic_v_range = (v_min, v_max)
-
-                # Update scene objects that need ranges
                 if dynamic_h_range and dynamic_v_range:
                     for obj in self.scene.objects:
-                        if isinstance(obj, Grid):
-                            obj.set_ranges(dynamic_h_range, dynamic_v_range, plane_str)
-                        elif isinstance(obj, MathFunction):
-                            obj.update_for_plane(plane_str, dynamic_h_range, dynamic_v_range)
-        else:
-            # Revert grid to default state if not in 2D mode
+                        if isinstance(obj, Grid): obj.set_ranges(dynamic_h_range, dynamic_v_range, plane_str)
+                        elif isinstance(obj, MathFunction): obj.update_for_plane(plane_str, dynamic_h_range, dynamic_v_range)
+        else: # 3D Camera
             for obj in self.scene.objects:
-                if isinstance(obj, Grid):
-                    obj.set_to_default()
+                if isinstance(obj, Grid): obj.set_to_default()
 
         # Create/update render objects
-        for obj in self.scene.objects:
-            if hasattr(obj, 'vertices') and obj.vertices.size > 0:
-                # If the object is dirty, we must recreate its render object
-                # to ensure the VBO is correctly sized.
-                if getattr(obj, 'is_dirty', False) and obj in self.render_objects:
-                    ro = self.render_objects.pop(obj)
-                    ro.release() # Release old GPU resources
-                    obj.is_dirty = False
+        scene_objs_with_verts = {obj for obj in self.scene.objects if hasattr(obj, 'vertices') and obj.vertices.size > 0}
+        current_render_obj_keys = set(self.render_objects.keys())
 
-                if obj not in self.render_objects:
-                    self.render_objects[obj] = self.renderer.create_render_object(obj)
+        for obj in scene_objs_with_verts:
+            if getattr(obj, 'is_dirty', False) and obj in self.render_objects:
+                self.render_objects.pop(obj).release()
+                obj.is_dirty = False
+            if obj not in self.render_objects:
+                self.render_objects[obj] = self.renderer.create_render_object(obj)
 
-            else: # Object has no vertices, remove its render object if it exists
-                if obj in self.render_objects:
-                    ro = self.render_objects.pop(obj)
-                    ro.release()
+        for obj in current_render_obj_keys - scene_objs_with_verts:
+            if obj in self.render_objects:
+                self.render_objects.pop(obj).release()
 
-        # Handle object removal
-        removed_objects = [obj for obj in self.render_objects if obj not in self.scene.objects]
-        for obj in removed_objects:
-            ro = self.render_objects.pop(obj)
-            ro.release()
-
-        # Tell the renderer to draw the objects
-        self.renderer.render(list(self.render_objects.values()), self.cam, width, height, h_range=h_proj_range, v_range=v_proj_range)
+        self.renderer.render(list(self.render_objects.values()), self.camera, width, height, h_range=h_proj_range, v_range=v_proj_range)
 
 
     def closeEvent(self, event):
@@ -681,85 +703,14 @@ class RenderSpace(QOpenGLWidget):
         super().closeEvent(event)
 
 
-    def update_camera(self, dt: float = 0.016): # dt is roughly 1/60th of a second
-        """Updates the camera's position and orientation based on user input."""
-        # Clear manual ranges on any interaction
+    def update_camera(self, dt: float = 0.016):
         if self.input_state.left_mouse_pressed or abs(self.input_state.scroll_delta) > 0:
             if self.manual_ranges:
                 self.manual_ranges.clear()
                 self.manual_range_cleared.emit()
 
-        keys = self.input_state.keys_held
+        self.camera.update(self.input_state, dt, self.width(), self.height())
 
-        if self.cam.mode == CameraMode.TwoD:
-            # --- Mouse Panning (2D Mode) ---
-            if self.input_state.left_mouse_pressed:
-                if self.height() > 0:
-                    # Adjust sensitivity based on distance (zoom level) and aspect ratio
-                    aspect_ratio = self.width() / self.height()
-                    pan_speed_h = self.cam.distance * aspect_ratio / self.width()
-                    pan_speed_v = self.cam.distance / self.height()
-
-                    if self.cam.snap_mode == SnapMode.XY:
-                        self.cam.position_center[0] -= self.input_state.mouse_delta[0] * pan_speed_h
-                        self.cam.position_center[1] += self.input_state.mouse_delta[1] * pan_speed_v
-                    elif self.cam.snap_mode == SnapMode.XZ:
-                        self.cam.position_center[0] -= self.input_state.mouse_delta[0] * pan_speed_h
-                        self.cam.position_center[2] -= self.input_state.mouse_delta[1] * pan_speed_v
-                    elif self.cam.snap_mode == SnapMode.YZ:
-                        self.cam.position_center[2] -= self.input_state.mouse_delta[0] * pan_speed_h
-                        self.cam.position_center[1] += self.input_state.mouse_delta[1] * pan_speed_v
-        else:
-            # --- Mouse Rotation (3D Mode) ---
-            if self.input_state.left_mouse_pressed:
-                self.cam.rotation[0] += self.input_state.mouse_delta[1] # Pitch
-                self.cam.rotation[1] += self.input_state.mouse_delta[0] # Yaw
-                self.cam.rotation[0] = np.clip(self.cam.rotation[0], -89.0, 89.0) # Clamp pitch
-                self.cam.rotation[1] = self.cam.rotation[1] % 360.0 # Wrap yaw
-
-        # --- Mouse Zoom (Shared) ---
-        if abs(self.input_state.scroll_delta) > 0:
-            zoom_factor = 1.1 if self.input_state.scroll_delta < 0 else 1/1.1
-            self.cam.distance *= zoom_factor
-            self.cam.distance = np.clip(self.cam.distance, 1.0, 500.0)
-
-        # --- Keyboard Movement (WASD, 3D Mode Only) ---
-        if self.cam.mode == CameraMode.ThreeD:
-            if Qt.Key.Key_W in keys:
-                # Move camera center forward
-                forward = self.cam.position_center - self.cam.get_position()
-                forward[1] = 0  # Project onto XZ plane
-                if np.linalg.norm(forward) > 0.1:
-                    forward = forward / np.linalg.norm(forward)
-                    self.cam.position_center += forward * dt * 20.0
-
-            if Qt.Key.Key_S in keys:
-                # Move camera center backward
-                forward = self.cam.position_center - self.cam.get_position()
-                forward[1] = 0 # Project onto XZ plane
-                if np.linalg.norm(forward) > 0.1:
-                    forward = forward / np.linalg.norm(forward)
-                    self.cam.position_center -= forward * dt * 20.0
-
-            if Qt.Key.Key_A in keys:
-                # Move camera center left
-                forward = self.cam.position_center - self.cam.get_position()
-                right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
-                right[1] = 0 # Project onto XZ plane
-                if np.linalg.norm(right) > 0.1:
-                    right = right / np.linalg.norm(right)
-                    self.cam.position_center -= right * dt * 20.0
-
-            if Qt.Key.Key_D in keys:
-                # Move camera center right
-                forward = self.cam.position_center - self.cam.get_position()
-                right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
-                right[1] = 0 # Project onto XZ plane
-                if np.linalg.norm(right) > 0.1:
-                    right = right / np.linalg.norm(right)
-                    self.cam.position_center += right * dt * 20.0
-
-        # Reset mouse and scroll deltas after they've been processed
         self.input_state.mouse_delta[:] = 0
         self.input_state.scroll_delta = 0
 
@@ -770,7 +721,6 @@ class RenderSpace(QOpenGLWidget):
             self.input_state.left_mouse_pressed = True
         elif event.button() == Qt.MouseButton.RightButton:
             self.input_state.right_mouse_pressed = True
-        # Record the current mouse position
         self.input_state.mouse_pos[:] = (event.position().x(), event.position().y())
 
 
@@ -780,7 +730,6 @@ class RenderSpace(QOpenGLWidget):
             self.input_state.left_mouse_pressed = False
         elif event.button() == Qt.MouseButton.RightButton:
             self.input_state.right_mouse_pressed = False
-        # No need to update mouse_pos here, it will be handled by mouseMoveEvent or next mousePressEvent
 
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -792,7 +741,6 @@ class RenderSpace(QOpenGLWidget):
 
     def wheelEvent(self, event: QWheelEvent):
         """Handle mouse wheel scroll events for zooming."""
-        # PySide6's angleDelta().y() is usually in 1/8ths of a degree, so 120 is a standard wheel click
         self.input_state.scroll_delta = event.angleDelta().y() / 120.0
 
 
@@ -811,25 +759,12 @@ class RenderSpace(QOpenGLWidget):
         """Handle key press events."""
         self.input_state.keys_held.add(event.key())
         
-        # Toggle projection mode with Tab key only if mouse is hovering
-        if event.key() == Qt.Key.Key_Tab and self.mouse_hovering:
-            if self.cam.projection == Projection.Orthographic:
-                self.cam.projection = Projection.Perspective
-            else:
-                self.cam.projection = Projection.Orthographic
-            event.accept()
-            return
-        
-        # Toggle 2D/3D mode with M key
-        if event.key() == Qt.Key.Key_M:
-            if self.cam.mode == CameraMode.ThreeD:
-                self.cam.mode = CameraMode.TwoD
-                self.cam.projection = Projection.Orthographic
+        if event.key() == Qt.Key.Key_Tab and self.mouse_hovering and isinstance(self.camera, Camera3D):
+            self.camera.projection = Projection.Orthographic if self.camera.projection == Projection.Perspective else Projection.Perspective
             event.accept()
             return
 
         super().keyPressEvent(event)
-
 
     def keyReleaseEvent(self, event: QKeyEvent):
         """Handle key release events."""

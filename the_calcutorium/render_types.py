@@ -10,7 +10,3 @@ class SnapMode(Enum):
     XZ = auto()
     YZ = auto()
 
-
-class CameraMode(Enum):
-    TwoD = auto()
-    ThreeD = auto()

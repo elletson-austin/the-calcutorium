@@ -6,7 +6,7 @@ import sys
 
 # Import our custom components
 from .scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
-from .rendering import RenderSpace, CameraMode, SnapMode
+from .rendering import RenderWindow, SnapMode, Camera2D, Camera3D
 from .input_widget import InputWidget
 from .function_editor_widget import FunctionEditorWidget
 from .output_widget import OutputWidget
@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         self.scene.objects.append(grid)
 
         # Create the View (PySideRenderSpace)
-        self.render_widget = RenderSpace()
+        self.render_widget = RenderWindow()
         
         # Connect the View to the Model
         self.render_widget.set_scene(self.scene)
@@ -265,37 +265,47 @@ class MainWindow(QMainWindow):
 
     def _view_command(self, command_parts: list[str]):
         if len(command_parts) < 2:
-            self.output_widget.write_error(f"Invalid 'view' command. Expected: 'view <mode> [plane]'. Type 'help' for available commands.")
+            self.output_widget.write_error("Invalid 'view' command. Expected: 'view <mode> [plane]'. Type 'help' for available commands.")
             return
 
         mode = command_parts[1].lower()
+        current_cam = self.render_widget.camera
+        
         if mode == "3d":
-            self.render_widget.cam.mode = CameraMode.ThreeD
+            if isinstance(current_cam, Camera3D):
+                self.output_widget.write("Already in 3D Mode.")
+                return
+            new_cam = Camera3D(position_center=current_cam.position_center, distance=current_cam.distance)
+            self.render_widget.set_camera(new_cam)
             self.output_widget.write("Switched to 3D Mode")
             return
         
         if mode == "2d":
             if len(command_parts) < 3:
-                self.output_widget.write_error(f"Invalid 'view 2d' command. Expected: 'view 2d <plane>'. Use 'xy', 'xz', or 'yz'.")
+                self.output_widget.write_error("Invalid 'view 2d' command. Expected: 'view 2d <plane>'. Use 'xy', 'xz', or 'yz'.")
                 return
             
             plane = command_parts[2].lower()
-            self.render_widget.cam.mode = CameraMode.TwoD
-            if plane == "xy":
-                self.render_widget.cam.snap_mode = SnapMode.XY
-                self.output_widget.write("Switched to 2D Mode (XY Plane)")
-            elif plane == "xz":
-                self.render_widget.cam.snap_mode = SnapMode.XZ
-                self.output_widget.write("Switched to 2D Mode (XZ Plane)")
-            elif plane == "yz":
-                self.render_widget.cam.snap_mode = SnapMode.YZ
-                self.output_widget.write("Switched to 2D Mode (YZ Plane)")
+            snap_map = {"xy": SnapMode.XY, "xz": SnapMode.XZ, "yz": SnapMode.YZ}
+            snap_mode = snap_map.get(plane)
+
+            if snap_mode:
+                if isinstance(current_cam, Camera2D) and current_cam.snap_mode == snap_mode:
+                    self.output_widget.write(f"Already in 2D Mode ({plane.upper()} Plane).")
+                    return
+                new_cam = Camera2D(
+                    position_center=current_cam.position_center,
+                    distance=current_cam.distance,
+                    snap_mode=snap_mode
+                )
+                self.render_widget.set_camera(new_cam)
+                self.output_widget.write(f"Switched to 2D Mode ({plane.upper()} Plane)")
             else:
                 self.output_widget.write_error(f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'.")
             return
 
     def _range_command(self, command_parts: list[str]):
-        if self.render_widget.cam.mode != CameraMode.TwoD:
+        if not isinstance(self.render_widget.camera, Camera2D):
             self.output_widget.write_error("The 'range' command is only available in 2D view modes. Use 'view 2d ...' first.")
             return
 
@@ -327,7 +337,7 @@ class MainWindow(QMainWindow):
         self.output_widget.write(f"Set manual range for {axis_str}-axis to ({min_val}, {max_val}).")
 
         # Adjust camera center and distance if both relevant ranges are now manually set
-        current_snap_mode = self.render_widget.cam.snap_mode
+        current_snap_mode = self.render_widget.camera.snap_mode
         h_axis, v_axis = None, None
 
         if current_snap_mode == SnapMode.XY:
@@ -343,8 +353,8 @@ class MainWindow(QMainWindow):
 
             # Update camera center
             axis_map = {'x': 0, 'y': 1, 'z': 2}
-            self.render_widget.cam.position_center[axis_map[h_axis]] = (h_range[0] + h_range[1]) / 2
-            self.render_widget.cam.position_center[axis_map[v_axis]] = (v_range[0] + v_range[1]) / 2
+            self.render_widget.camera.position_center[axis_map[h_axis]] = (h_range[0] + h_range[1]) / 2
+            self.render_widget.camera.position_center[axis_map[v_axis]] = (v_range[0] + v_range[1]) / 2
             
             range_width = h_range[1] - h_range[0]
             range_height = v_range[1] - v_range[0]
@@ -364,10 +374,10 @@ class MainWindow(QMainWindow):
             # Adjust camera distance to fit the range within the window, maintaining chosen aspect
             if window_aspect > range_aspect:
                 # Window is wider than the desired range, fit to height
-                self.render_widget.cam.distance = range_height
+                self.render_widget.camera.distance = range_height
             else:
                 # Window is taller or equal aspect, fit to width
-                self.render_widget.cam.distance = range_width / window_aspect
+                self.render_widget.camera.distance = range_width / window_aspect
             
             self.output_widget.write(f"Camera adjusted to fit manual ranges for {h_axis}/{v_axis} plane.")
 
