@@ -1,5 +1,5 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QLabel, QHBoxLayout
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import QWidget, QLineEdit, QHBoxLayout
+from PySide6.QtCore import Signal
 from .scene import MathFunction
 
 class FunctionEditorWidget(QWidget):
@@ -13,8 +13,6 @@ class FunctionEditorWidget(QWidget):
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(5)
-
-        self.update_label()
 
         self.equation_input = QLineEdit()
         self.equation_input.setText(self.math_function.equation_str)

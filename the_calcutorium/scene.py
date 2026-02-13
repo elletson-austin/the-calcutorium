@@ -102,11 +102,12 @@ class Axes(SceneObject):
 
 class MathFunction(SceneObject):
     def __init__(self, equation_str: str, points: int = 500, output_widget=None):
-        super().__init__(RenderMode=RenderMode.LINE_STRIP)
+        super().__init__(RenderMode=RenderMode.LINE_STRIP, ProgramID=ProgramID.BASIC_3D, Is2d=False) # Initial defaults
+
         self.equation_str = equation_str
         self.points = points
         self.output_widget = output_widget
-        
+
         self.domain_vars = []
         self.output_var = None
         self._sympy_expr = None
@@ -115,31 +116,34 @@ class MathFunction(SceneObject):
 
         self.current_plane = None
         self.current_domain_range = None
-        
-        self._parse_and_lambdify()
-        
-        self.vertices = np.array([], dtype=np.float32)
-        self.is_dirty = True
 
+        self._parse_and_lambdify()
+
+        # Update properties based on parsed function
         if self.num_domain_vars == 1:
             self.RenderMode = RenderMode.LINE_STRIP
+            self.Is2d = True
+            self.ProgramID = ProgramID.BASIC_3D # Ensure ProgramID is consistent for lines
             indep_var_str = str(self.domain_vars[0])
             output_var_str = str(self.output_var)
 
             all_axes = {'x', 'y', 'z'}
             present_vars = {indep_var_str, output_var_str}
-            # The remaining axis will be set to 0.0
             const_axis_str = (all_axes - present_vars).pop()
-                
+
             self._generate_line_vertices(domain_range=(-10, 10), indep_axis=indep_var_str, output_axis=output_var_str, const_axis=const_axis_str)
         elif self.num_domain_vars == 2:
             self.RenderMode = RenderMode.TRIANGLES
             self.ProgramID = ProgramID.SURFACE
-            # For 3D plots, we generate vertices once with a fixed range
+            self.Is2d = False
             self._generate_surface_vertices()
-        else:
+        else: # No domain variables or more than 2, default to basic 3D and not 2D
+            self.RenderMode = RenderMode.POINTS
             self.ProgramID = ProgramID.BASIC_3D
+            self.Is2d = False
 
+        self.vertices = np.array([], dtype=np.float32)
+        self.is_dirty = True
     def _parse_and_lambdify(self):
         if not self.equation_str.strip():
             # Handle empty equation string
@@ -337,7 +341,7 @@ class MathFunction(SceneObject):
     
 class Grid(SceneObject):
     def __init__(self, h_range=(-250, 250), v_range=(-250, 250), spacing=1.0, plane='xy'):
-        super().__init__(RenderMode=RenderMode.LINES)
+        super().__init__(RenderMode=RenderMode.LINES, Is2d=True)
         self.h_range = h_range
         self.v_range = v_range
         self.spacing = spacing
@@ -461,7 +465,7 @@ class LorenzAttractor(SceneObject):
     
 class Quad(SceneObject):
     def __init__(self, ProgramID: ProgramID, x0: float, x1: float, y0: float, y1: float):
-        super().__init__(RenderMode=RenderMode.TRIANGLES, dynamic=True)
+        super().__init__(RenderMode=RenderMode.TRIANGLES, dynamic=True, Is2d=True)
         self.x0 = x0
         self.x1 = x1
         self.y0 = y0

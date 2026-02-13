@@ -1,5 +1,3 @@
-
-from enum import Enum, auto
 from dataclasses import dataclass, field
 
 import moderngl
@@ -26,13 +24,13 @@ class InputState: # Tracks the state of the input
 
 class Camera3D:
     def __init__(self,
-                 position_center: np.ndarray = None,
-                 rotation: np.ndarray = None,
+                 position_center: np.ndarray = np.array([0.0, 0.0, 0.0], dtype=np.float32),
+                 rotation: np.ndarray = np.array([0.0, 45.0, 0.0], dtype=np.float32),
                  distance: float = 50.0,
                  fov: float = 60.0):
 
-        self.position_center = np.array([0.0, 0.0, 0.0], dtype=np.float32) if position_center is None else position_center
-        self.rotation = np.array([-30.0, 45.0, 0.0], dtype=np.float32) if rotation is None else rotation
+        self.position_center = position_center
+        self.rotation = rotation
         self.distance = distance
         self.fov = fov
         self.projection = Projection.Perspective
@@ -163,12 +161,8 @@ class Camera2D:
         cam_pos = self.get_position()
         target = self.position_center
 
-        if self.snap_mode == SnapMode.XY:
-            world_up = np.array([0, 1, 0], dtype=np.float32)
-        elif self.snap_mode == SnapMode.XZ:
+        if self.snap_mode == SnapMode.XZ:
             world_up = np.array([0, 0, 1], dtype=np.float32)
-        elif self.snap_mode == SnapMode.YZ:
-            world_up = np.array([0, 1, 0], dtype=np.float32)
         else:
             world_up = np.array([0, 1, 0], dtype=np.float32)
 
@@ -435,11 +429,11 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         """
         return COMPUTE_SHADER
     
-    def build_compute_shader(self, program_id) -> moderngl.ComputeShader:
-        if program_id in self.compute_shaders:
-            return self.compute_shaders[program_id]
+    def build_compute_shader(self, ProgramID: ProgramID) -> moderngl.ComputeShader:
+        if ProgramID in self.compute_shaders:
+            return self.compute_shaders[ProgramID]
 
-        if program_id == ProgramID.LORENZ_ATTRACTOR:
+        if ProgramID == ProgramID.LORENZ_ATTRACTOR:
             COMPUTE_SOURCE = self.lorenz_attractor_compute_src()
         else:
             print('no valid compute shader source code available') 
@@ -447,21 +441,21 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
         
         compute_shader = self.ctx.compute_shader(COMPUTE_SOURCE)
         
-        self.compute_shaders[program_id] = compute_shader
+        self.compute_shaders[ProgramID] = compute_shader
         return compute_shader
 
 
-    def build_program(self, program_id) -> moderngl.Program: # think of as the material 
-        if program_id in self.programs:
-            return self.programs[program_id]
+    def build_program(self, ProgramID: ProgramID) -> moderngl.Program: # think of as the material 
+        if ProgramID in self.programs:
+            return self.programs[ProgramID]
 
-        if program_id == ProgramID.BASIC_3D:
+        if ProgramID == ProgramID.BASIC_3D:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.basic_3d_src()
-        elif program_id == ProgramID.LORENZ_ATTRACTOR:
+        elif ProgramID == ProgramID.LORENZ_ATTRACTOR:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.lorenz_attractor_src()
-        elif program_id == ProgramID.GRID:
+        elif ProgramID == ProgramID.GRID:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.grid_src()
-        elif program_id == ProgramID.SURFACE:
+        elif ProgramID == ProgramID.SURFACE:
             VERTEX_SOURCE, FRAGMENT_SOURCE = self.surface_src()
         else:
             print('no valid shader source code available') 
@@ -471,7 +465,7 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
             vertex_shader=VERTEX_SOURCE, 
             fragment_shader=FRAGMENT_SOURCE) 
         
-        self.programs[program_id] = program
+        self.programs[ProgramID] = program
         return program
     
     
@@ -633,6 +627,35 @@ class RenderWindow(QOpenGLWidget):
             self.ctx.viewport = (0, 0, w, h)
             self.screen = self.ctx.detect_framebuffer()
 
+    def _update_2d_rendering_params(self, width: int, height: int):
+        h_proj_range, v_proj_range = None, None
+        cam2d = self.camera
+        snap_map = {SnapMode.XY: ('x', 'y', 'xy'), SnapMode.XZ: ('x', 'z', 'xz'), SnapMode.YZ: ('z', 'y', 'yz')}
+        h_axis, v_axis, plane_str = snap_map.get(cam2d.snap_mode, (None, None, None))
+
+        if h_axis and v_axis:
+            dynamic_h_range, dynamic_v_range = None, None
+            if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
+                h_proj_range = self.manual_ranges[h_axis]
+                v_proj_range = self.manual_ranges[v_axis]
+                dynamic_h_range, dynamic_v_range = h_proj_range, v_proj_range
+            elif height > 0:
+                aspect = width / height
+                view_height = cam2d.distance
+                view_width = view_height * aspect
+                buffer = 1.05
+                axis_map = {'x': 0, 'y': 1, 'z': 2}
+                h_center, v_center = cam2d.position_center[axis_map[h_axis]], cam2d.position_center[axis_map[v_axis]]
+                h_min, h_max = h_center - (view_width / 2) * buffer, h_center + (view_width / 2) * buffer
+                v_min, v_max = v_center - (view_height / 2) * buffer, v_center + (view_height / 2) * buffer
+                dynamic_h_range, dynamic_v_range = (h_min, h_max), (v_min, v_max)
+
+            if dynamic_h_range and dynamic_v_range:
+                for obj in self.scene.objects:
+                    if isinstance(obj, Grid): obj.set_ranges(dynamic_h_range, dynamic_v_range, plane_str)
+                    elif isinstance(obj, MathFunction): obj.update_for_plane(plane_str, dynamic_h_range, dynamic_v_range)
+        return h_proj_range, v_proj_range
+
     def paintGL(self):
         self.makeCurrent()
         if not all([self.ctx, self.scene, self.renderer, self.screen]):
@@ -650,49 +673,59 @@ class RenderWindow(QOpenGLWidget):
         h_proj_range, v_proj_range = None, None
 
         if isinstance(self.camera, Camera2D):
-            cam2d = self.camera
-            snap_map = {SnapMode.XY: ('x', 'y', 'xy'), SnapMode.XZ: ('x', 'z', 'xz'), SnapMode.YZ: ('z', 'y', 'yz')}
-            h_axis, v_axis, plane_str = snap_map.get(cam2d.snap_mode, (None, None, None))
-
-            if h_axis and v_axis:
-                dynamic_h_range, dynamic_v_range = None, None
-                if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
-                    h_proj_range = self.manual_ranges[h_axis]
-                    v_proj_range = self.manual_ranges[v_axis]
-                    dynamic_h_range, dynamic_v_range = h_proj_range, v_proj_range
-                elif height > 0:
-                    aspect = width / height
-                    view_height = cam2d.distance
-                    view_width = view_height * aspect
-                    buffer = 1.05
-                    axis_map = {'x': 0, 'y': 1, 'z': 2}
-                    h_center, v_center = cam2d.position_center[axis_map[h_axis]], cam2d.position_center[axis_map[v_axis]]
-                    h_min, h_max = h_center - (view_width / 2) * buffer, h_center + (view_width / 2) * buffer
-                    v_min, v_max = v_center - (view_height / 2) * buffer, v_center + (view_height / 2) * buffer
-                    dynamic_h_range, dynamic_v_range = (h_min, h_max), (v_min, v_max)
-
-                if dynamic_h_range and dynamic_v_range:
-                    for obj in self.scene.objects:
-                        if isinstance(obj, Grid): obj.set_ranges(dynamic_h_range, dynamic_v_range, plane_str)
-                        elif isinstance(obj, MathFunction): obj.update_for_plane(plane_str, dynamic_h_range, dynamic_v_range)
+            h_proj_range, v_proj_range = self._update_2d_rendering_params(width, height)
         else: # 3D Camera
             for obj in self.scene.objects:
                 if isinstance(obj, Grid): obj.set_to_default()
 
-        # Create/update render objects
-        scene_objs_with_verts = {obj for obj in self.scene.objects if hasattr(obj, 'vertices') and obj.vertices.size > 0}
+    def _manage_render_objects(self, filtered_scene_objs: set):
         current_render_obj_keys = set(self.render_objects.keys())
 
-        for obj in scene_objs_with_verts:
+        # Add or update render objects
+        for obj in filtered_scene_objs:
             if getattr(obj, 'is_dirty', False) and obj in self.render_objects:
                 self.render_objects.pop(obj).release()
                 obj.is_dirty = False
             if obj not in self.render_objects:
                 self.render_objects[obj] = self.renderer.create_render_object(obj)
 
-        for obj in current_render_obj_keys - scene_objs_with_verts:
+        # Remove render objects that are no longer in the filtered set
+        for obj in current_render_obj_keys - filtered_scene_objs:
             if obj in self.render_objects:
                 self.render_objects.pop(obj).release()
+
+
+    def paintGL(self):
+        self.makeCurrent()
+        if not all([self.ctx, self.scene, self.renderer, self.screen]):
+            return
+
+        self.screen.use()
+        self.update_camera(0.016) # Assuming 60fps for now
+
+        self.screen.clear(0.0, 0.2, 0.2, 1.0)
+        
+        width, height = self.width(), self.height()
+        if width == 0 or height == 0:
+            return
+
+        h_proj_range, v_proj_range = None, None
+
+        if isinstance(self.camera, Camera2D):
+            h_proj_range, v_proj_range = self._update_2d_rendering_params(width, height)
+        else: # 3D Camera
+            for obj in self.scene.objects:
+                if isinstance(obj, Grid): obj.set_to_default()
+
+        # Determine the set of scene objects to be rendered based on camera type
+        if isinstance(self.camera, Camera2D):
+            # In 2D camera mode, only render objects explicitly marked as 2D
+            filtered_scene_objs = {obj for obj in self.scene.objects if obj.Is2d and hasattr(obj, 'vertices') and obj.vertices.size > 0}
+        else: # Camera3D
+            # In 3D camera mode, render all objects that have vertices (both 2D and 3D)
+            filtered_scene_objs = {obj for obj in self.scene.objects if hasattr(obj, 'vertices') and obj.vertices.size > 0}
+        
+        self._manage_render_objects(filtered_scene_objs)
 
         self.renderer.render(list(self.render_objects.values()), self.camera, width, height, h_range=h_proj_range, v_range=v_proj_range)
 
