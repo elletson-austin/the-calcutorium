@@ -3,7 +3,8 @@ from PySide6.QtCore import Qt, QObject, QEvent # QObject and QEvent for event fi
 
 # Import our custom components
 from .scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
-from .rendering import RenderWindow, SnapMode, Camera2D, Camera3D
+from .render_window import RenderWindow
+from .camera import Camera2D, Camera3D
 from .input_widget import InputWidget
 from .function_editor_widget import FunctionEditorWidget
 from .output_widget import OutputWidget
