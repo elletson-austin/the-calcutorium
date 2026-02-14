@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING, Dict, Callable, List
 
 if TYPE_CHECKING:
     from .scene import Scene, MathFunction, LorenzAttractor
-    from .rendering import RenderWindow, SnapMode, Camera2D, Camera3D
+    from .render_window import RenderWindow
+    from .render_types import SnapMode
+    from .camera import Camera2D, Camera3D
     from .output_widget import OutputWidget
 
 class CommandHandler:
@@ -125,7 +127,8 @@ class CommandHandler:
             self.output_widget.write_error(f"Error loading scene: {e}")
 
     def _view_command(self, command_parts: list[str]):
-        from .rendering import Camera3D, Camera2D, SnapMode # Import here for type checking
+        from .camera import Camera3D, Camera2D
+        from .render_types import SnapMode
         if len(command_parts) < 2:
             self.output_widget.write_error("Invalid 'view' command. Expected: 'view <mode> [plane]'. Type 'help' for available commands.")
             return
@@ -167,7 +170,8 @@ class CommandHandler:
             return
 
     def _range_command(self, command_parts: list[str]):
-        from .rendering import Camera2D, SnapMode # Import here for type checking
+        from .camera import Camera2D
+        from .render_types import SnapMode
         if not isinstance(self.render_window.camera, Camera2D):
             self.output_widget.write_error("The 'range' command is only available in 2D view modes. Use 'view 2d ...' first.")
             return
@@ -266,7 +270,7 @@ class CommandHandler:
         
         if type_ == "func":
             if len(command_parts) < 3:
-                self.output_widget.write_error(f"Invalid 'add func' command. Expected: add func "<value>".")
+                self.output_widget.write_error(f"Invalid 'add func' command. Expected: add func \"<value>\".")
                 return
             
             value_string = command_parts[2]
@@ -277,25 +281,25 @@ class CommandHandler:
                     if isinstance(obj, MathFunction) and obj.equation_str == value_string:
                         self.output_widget.write(f"Function '{value_string}' already exists in the scene.")
                         return
-                new_func = MathFunction(value_string, output_widget=self.output_widget) # Pass output_widget
+                new_func = MathFunction(value_string)
                 new_func.name = value_string # Assign name for identification
                 self.scene.objects.append(new_func)
                 self.update_function_editors_callback()
                 self.output_widget.write(f"Added function: {value_string}")
-            except Exception as e:
+            except ValueError as e:
                 self.output_widget.write_error(f"Error adding function '{value_string}': {e}")
             return
     
     def _remove_command(self, command_parts: list[str]):
         from .scene import MathFunction # Import here for type checking
         if len(command_parts) < 2:
-            self.output_widget.write_error(f"Invalid 'remove' command format. Expected: 'remove <type> "<value>"'. Type 'help' for available commands.")
+            self.output_widget.write_error(f"Invalid 'remove' command format. Expected: 'remove <type> \"<value>\"'. Type 'help' for available commands.")
             return
         
         type_ = command_parts[1].lower()
         if type_ == "func":
             if len(command_parts) < 3:
-                self.output_widget.write_error(f"Invalid 'remove func' command. Expected: remove func "<value>".")
+                self.output_widget.write_error(f"Invalid 'remove func' command. Expected: remove func \"<value>\".")
                 return
 
             value_string = command_parts[2]

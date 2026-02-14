@@ -101,12 +101,11 @@ class Axes(SceneObject):
         self.ProgramID = ProgramID.BASIC_3D
 
 class MathFunction(SceneObject):
-    def __init__(self, equation_str: str, points: int = 500, output_widget=None):
+    def __init__(self, equation_str: str, points: int = 500):
         super().__init__(RenderMode=RenderMode.LINE_STRIP, ProgramID=ProgramID.BASIC_3D, Is2d=False) # Initial defaults
 
         self.equation_str = equation_str
         self.points = points
-        self.output_widget = output_widget
 
         self.domain_vars = []
         self.output_var = None
@@ -224,12 +223,8 @@ class MathFunction(SceneObject):
 
         all_vars = {domain_var1_name, domain_var2_name, output_var_name}
         if len(all_vars) != 3 or not all_vars.issubset({'x', 'y', 'z'}):
-            if self.output_widget:
-                self.output_widget.write_error(f"Surface plot must be of the form f(a,b)=c where a,b,c are unique x,y,z variables.")
-            self.vertices = np.array([], dtype=np.float32)
-            self.is_dirty = True
-            return
-
+            raise ValueError(f"Surface plot must be of the form f(a,b)=c where a,b,c are unique x,y,z variables.")
+        
         domain1_vals = np.linspace(domain1_range[0], domain1_range[1], self.points)
         domain2_vals = np.linspace(domain2_range[0], domain2_range[1], self.points)
         grid_domain1, grid_domain2 = np.meshgrid(domain1_vals, domain2_vals)
@@ -237,11 +232,7 @@ class MathFunction(SceneObject):
         try:
             grid_output = self._callable_func(grid_domain1, grid_domain2)
         except Exception as e:
-            if self.output_widget:
-                self.output_widget.write_error(f"Error evaluating surface function: {e}")
-            self.vertices = np.array([], dtype=np.float32)
-            self.is_dirty = True
-            return
+            raise ValueError(f"Error evaluating surface function: {e}") from e
         
         grids = {
             domain_var1_name: grid_domain1,
@@ -289,7 +280,7 @@ class MathFunction(SceneObject):
 
     def regenerate(self, new_equation_str: str):
         # Re-initialize the object
-        self.__init__(new_equation_str, points=self.points, output_widget=self.output_widget)
+        self.__init__(new_equation_str, points=self.points)
         self.name = new_equation_str
 
 
