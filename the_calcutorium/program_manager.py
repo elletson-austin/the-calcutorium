@@ -27,7 +27,7 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
             return self.compute_shaders[ProgramID]
 
         if ProgramID == ProgramID.LORENZ_ATTRACTOR:
-            COMPUTE_SOURCE = self._read_shader_source('lorenz_attractor.comp')
+            COMPUTE_SOURCE = self._read_shader_source('lorenz_attractor/lorenz_attractor.comp')
         else:
             print('no valid compute shader source code available')
             return None
@@ -45,10 +45,10 @@ class ProgramManager: # holds and stores programs that draw points, lines, etc.
             return self.programs[ProgramID]
 
         shader_map = {
-            ProgramID.BASIC_3D: ('basic_3d.vert', 'basic_3d.frag'),
-            ProgramID.LORENZ_ATTRACTOR: ('lorenz_attractor.vert', 'lorenz_attractor.frag'),
-            ProgramID.GRID: ('grid.vert', 'grid.frag'),
-            ProgramID.SURFACE: ('surface.vert', 'surface.frag'),
+            ProgramID.BASIC_3D: ('basic_3d/basic_3d.vert', 'basic_3d/basic_3d.frag'),
+            ProgramID.LORENZ_ATTRACTOR: ('lorenz_attractor/lorenz_attractor.vert', 'lorenz_attractor/lorenz_attractor.frag'),
+            ProgramID.GRID: ('grid/grid.vert', 'grid/grid.frag'),
+            ProgramID.SURFACE: ('surface/surface.vert', 'surface/surface.frag'),
         }
 
         if ProgramID not in shader_map:
