@@ -456,11 +456,3 @@ class LorenzAttractor(SceneObject):
         initial_points[:, :3] += [1.0, 1.0, 1.0]
         initial_points[:, 3] = 1.0
         return initial_points
-    
-class Quad(SceneObject):
-    def __init__(self, ProgramID: ProgramID, x0: float, x1: float, y0: float, y1: float):
-        super().__init__(RenderMode=RenderMode.TRIANGLES, dynamic=True, Is2d=True)
-        self.x0 = x0
-        self.x1 = x1
-        self.y0 = y0
-        self.y1 = y1
