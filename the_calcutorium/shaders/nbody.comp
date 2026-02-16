@@ -1,0 +1,46 @@
+#version 430
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) buffer Positions {
+    vec4 pos[];
+};
+
+layout(std430, binding = 1) buffer Velocities {
+    vec4 vel[];
+};
+
+layout(std430, binding = 2) buffer Masses {
+    float mass[];
+};
+
+uniform float dt;
+uniform float G;
+uniform float softening;
+uniform int num_bodies;
+uniform int steps;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(num_bodies)) return;
+
+    vec3 p = pos[i].xyz;
+    vec3 v = vel[i].xyz;
+
+    for (int s = 0; s < steps; ++s) {
+        vec3 acc = vec3(0.0);
+        for (int j = 0; j < num_bodies; ++j) {
+            if (j == int(i)) continue;
+            vec3 r = pos[j].xyz - p;
+            float distSqr = dot(r, r) + softening;
+            float invDist = inversesqrt(distSqr);
+            float invDist3 = invDist * invDist * invDist;
+            acc += G * mass[j] * r * invDist3;
+        }
+        v += acc * dt;
+        p += v * dt;
+    }
+
+    pos[i].xyz = p;
+    vel[i].xyz = v;
+}

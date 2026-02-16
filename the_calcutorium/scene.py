@@ -23,6 +23,7 @@ class RenderMode(Enum):
 class ProgramID(Enum):
     BASIC_3D = auto()
     LORENZ_ATTRACTOR = auto()
+    NBODY = auto()
     GRID = auto()
     SURFACE = auto()
 
@@ -200,16 +201,33 @@ class MathFunction(SceneObject):
             try:
                 out_val = self._callable_func(val)
                 point = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-                
+
                 point[indep_axis] = val
                 point[output_axis] = out_val
-                
-                vertices.extend([point['x'], point['y'], point['z'], 1, 1, 1]) # White color
+
+                self._append_vertex_xyz_color(vertices, point)
             except Exception:
                 pass 
         
         self.vertices = np.array(vertices, dtype=np.float32)
         self.is_dirty = True
+
+    def _append_vertex_xyz_color(self, vertices_list: list, point: dict, color=(1.0, 1.0, 1.0)):
+        """Append a position (x,y,z) and RGB color to a flat vertex list."""
+        vertices_list.extend([point['x'], point['y'], point['z'], color[0], color[1], color[2]])
+
+    def _add_triangle_with_normal(self, vertices_list: list, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray, color: list):
+        """Compute normal for triangle (p1,p2,p3) and append three vertices with normal and color."""
+        v1 = p2 - p1
+        v2 = p3 - p1
+        n = np.cross(v1, v2)
+        norm_n = np.linalg.norm(n)
+        if norm_n > 1e-6:
+            n /= norm_n
+
+        vertices_list.extend([*p1, *n, *color])
+        vertices_list.extend([*p2, *n, *color])
+        vertices_list.extend([*p3, *n, *color])
 
     def _generate_surface_vertices(self, domain1_range=(-10, 10), domain2_range=(-10, 10)):
         """Generates a triangle mesh for a 2-variable function."""
@@ -253,28 +271,10 @@ class MathFunction(SceneObject):
                 p4 = np.array([grid_x[i + 1, j + 1], grid_y[i + 1, j + 1], grid_z[i + 1, j + 1]])
 
                 # Triangle 1 (p1, p3, p2)
-                v1 = p3 - p1
-                v2 = p2 - p1
-                n1 = np.cross(v1, v2)
-                norm_n1 = np.linalg.norm(n1)
-                if norm_n1 > 1e-6:
-                    n1 /= norm_n1
-
-                vertices.extend([*p1, *n1, *color])
-                vertices.extend([*p3, *n1, *color])
-                vertices.extend([*p2, *n1, *color])
+                self._add_triangle_with_normal(vertices, p1, p3, p2, color)
 
                 # Triangle 2 (p2, p3, p4)
-                v1 = p3 - p2
-                v2 = p4 - p2
-                n2 = np.cross(v1, v2)
-                norm_n2 = np.linalg.norm(n2)
-                if norm_n2 > 1e-6:
-                    n2 /= norm_n2
-
-                vertices.extend([*p2, *n2, *color])
-                vertices.extend([*p3, *n2, *color])
-                vertices.extend([*p4, *n2, *color])
+                self._add_triangle_with_normal(vertices, p2, p3, p4, color)
 
         self.vertices = np.array(vertices, dtype=np.float32)
         self.is_dirty = True
@@ -458,3 +458,43 @@ class LorenzAttractor(SceneObject):
         initial_points[:, :3] += [1.0, 1.0, 1.0]
         initial_points[:, 3] = 1.0
         return initial_points
+
+
+class NBody(SceneObject):
+    def __init__(self, num_bodies: int = 1024, dt: float = 0.01, G: float = 1.0, softening: float = 0.01, steps: int = 0):
+        super().__init__(RenderMode=RenderMode.POINTS, ProgramID=ProgramID.NBODY, dynamic=True)
+        self.num_bodies = num_bodies
+        self.uniforms: dict = {
+            'dt': dt,
+            'G': G,
+            'softening': softening,
+            'num_bodies': num_bodies,
+            'steps': steps
+        }
+        self.positions = self._create_initial_positions(num_bodies)
+        self.velocities = self._create_initial_velocities(num_bodies)
+        self.masses = self._create_initial_masses(num_bodies)
+        # Provide a vertices field so the render pipeline's simple filter
+        # (which checks for a non-empty .vertices array) will include this
+        # object. Use the positions buffer as the vertex source.
+        self.vertices = self.positions.flatten()
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['uniforms'] = self.uniforms
+        return d
+
+    def _create_initial_positions(self, n: int) -> np.ndarray:
+        p = np.random.randn(n, 4).astype(np.float32)
+        p[:, :3] *= 5.0
+        p[:, 3] = 1.0
+        return p
+
+    def _create_initial_velocities(self, n: int) -> np.ndarray:
+        v = (np.random.randn(n, 4) * 0.1).astype(np.float32)
+        v[:, 3] = 0.0
+        return v
+
+    def _create_initial_masses(self, n: int) -> np.ndarray:
+        m = (np.abs(np.random.randn(n)) * 1.0).astype(np.float32)
+        return m

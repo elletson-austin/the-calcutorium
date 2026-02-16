@@ -3,7 +3,7 @@ import json
 from typing import TYPE_CHECKING, Dict, Callable, List
 
 if TYPE_CHECKING:
-    from .scene import Scene, MathFunction, LorenzAttractor
+    from .scene import Scene, MathFunction, LorenzAttractor, NBody
     from .render_window import RenderWindow
     from .render_types import SnapMode
     from .camera import Camera2D, Camera3D
@@ -22,6 +22,8 @@ class CommandHandler:
             "clear": self._clear_command,
             "save": self._save_command,
             "load": self._load_command,
+            "start": self._start_command,
+            "stop": self._stop_command,
             "view": self._view_command,
             "range": self._range_command,
             "add": self._add_command,
@@ -65,6 +67,9 @@ class CommandHandler:
   range <x|y|z> <min> <max> - Manually set the visible range for an axis (e.g., 'range x -10 10')
   range auto - Reset all axes to automatic ranging
   add lorenz - Add a Lorenz attractor to the scene
+    add nbody - Add an N-body simulation to the scene
+    start nbody [steps] - Start advancing the N-body simulation (optional steps per frame)
+    stop nbody - Stop advancing the N-body simulation
   add func "<function_string>" - Add a mathematical function to the scene (e.g., 'add func "x**2"')
   remove func "<function_string>" - Remove a mathematical function from the scene (e.g., 'remove func "x**2"')"""
         self.output_widget.write(help_message)
@@ -249,7 +254,7 @@ class CommandHandler:
             self.output_widget.write(f"Camera adjusted to fit manual ranges for {h_axis}/{v_axis} plane.")
 
     def _add_command(self, command_parts: list[str]):
-        from .scene import MathFunction, LorenzAttractor # Import here for type checking
+        from .scene import MathFunction, LorenzAttractor, NBody # Import here for type checking
         if len(command_parts) < 2:
             self.output_widget.write_error(f"Invalid 'add' command format. Expected: 'add <type> ...'. Type 'help' for available commands.")
             return
@@ -266,6 +271,19 @@ class CommandHandler:
             self.scene.objects.append(lorenz)
             self.output_widget.write("Added Lorenz Attractor.")
             self.update_function_editors_callback() # Lorenz is not a function, but might need editor update
+            return
+
+        if type_ == "nbody":
+            # Check if an NBody already exists
+            for obj in self.scene.objects:
+                if isinstance(obj, NBody):
+                    self.output_widget.write("N-body simulation already exists in the scene.")
+                    return
+            nbody = NBody()
+            nbody.name = "N-Body Simulation"
+            self.scene.objects.append(nbody)
+            self.output_widget.write("Added N-Body Simulation.")
+            self.update_function_editors_callback()
             return
         
         if type_ == "func":
