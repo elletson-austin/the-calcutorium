@@ -22,8 +22,6 @@ class CommandHandler:
             "clear": self._clear_command,
             "save": self._save_command,
             "load": self._load_command,
-            "start": self._start_command,
-            "stop": self._stop_command,
             "view": self._view_command,
             "range": self._range_command,
             "add": self._add_command,
