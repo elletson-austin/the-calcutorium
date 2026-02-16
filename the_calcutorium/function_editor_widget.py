@@ -1,6 +1,6 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QLabel
-from PySide6.QtCore import Signal, Qt
-from scene import MathFunction
+from PySide6.QtWidgets import QWidget, QLineEdit, QHBoxLayout
+from PySide6.QtCore import Signal
+from .scene import MathFunction
 
 class FunctionEditorWidget(QWidget):
     equation_changed = Signal(MathFunction, str)
@@ -9,18 +9,21 @@ class FunctionEditorWidget(QWidget):
         super().__init__(parent)
         self.math_function = math_function
         
-        self.layout = QVBoxLayout(self)
+        # A horizontal layout for the label and the equation input
+        self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.label = QLabel(f"f(x) = ")
+        self.layout.setSpacing(5)
+
         self.equation_input = QLineEdit()
         self.equation_input.setText(self.math_function.equation_str)
         self.equation_input.returnPressed.connect(self.on_equation_changed)
         
-        self.layout.addWidget(self.label)
         self.layout.addWidget(self.equation_input)
 
     def on_equation_changed(self):
         new_equation = self.equation_input.text()
         if new_equation != self.math_function.equation_str:
             self.equation_changed.emit(self.math_function, new_equation)
+
+    def update_equation_text(self):
+        self.equation_input.setText(self.math_function.equation_str)

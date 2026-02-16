@@ -1,13 +1,5 @@
-from PySide6.QtWidgets import QApplication
-import sys
-from app_window import MainWindow
-
-def main():
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+#!/usr/bin/env python
+from the_calcutorium.main import main
 
 if __name__ == "__main__":
     main()
-
