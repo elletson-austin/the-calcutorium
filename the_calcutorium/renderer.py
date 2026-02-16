@@ -17,6 +17,7 @@ class RenderObject:
         Rendermode: RenderMode,
         num_vertexes: int,
         compute_shader: moderngl.ComputeShader = None,
+        compute_uniforms: dict = None, # Add compute_uniforms parameter
         ) -> None:
         
         self.program_id = program_id
@@ -25,6 +26,7 @@ class RenderObject:
         self.Rendermode = Rendermode
         self.num_vertexes = num_vertexes
         self.compute_shader = compute_shader
+        self.compute_uniforms = compute_uniforms if compute_uniforms is not None else {}
 
 
     def release(self):
@@ -37,11 +39,16 @@ class Renderer:
         self.ctx = ctx
         self.program_manager = ProgramManager(self.ctx)
     
+    def _apply_compute_uniforms(self, compute_shader: moderngl.ComputeShader, uniforms: dict):
+        for name, value in uniforms.items():
+            if name in compute_shader:
+                compute_shader[name].value = value
+
     def create_render_object(self, obj: SceneObject) -> RenderObject:
         program = self.program_manager.build_program(obj.ProgramID)
         
         if obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
-            vbo = self.ctx.buffer(obj.vertices.tobytes())
+            vbo = self.ctx.buffer(obj.vertices.tobytes(), dynamic=True)
             vao = self.ctx.vertex_array(program, [(vbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
             return RenderObject(
@@ -50,7 +57,8 @@ class Renderer:
                 vbo=vbo,
                 Rendermode=obj.RenderMode,
                 num_vertexes=obj.num_points,
-                compute_shader=compute_shader
+                compute_shader=compute_shader,
+                compute_uniforms=obj.compute_uniforms # Pass compute_uniforms here
             )
         
         elif obj.ProgramID == ProgramID.SURFACE:
@@ -80,15 +88,15 @@ class Renderer:
             ro.num_vertexes = len(obj.vertices) // 9
         else:
             ro.num_vertexes = len(obj.vertices) // 6
+        
+        # Update compute uniforms if available and applicable
+        if obj.ProgramID == ProgramID.LORENZ_ATTRACTOR and hasattr(obj, 'compute_uniforms'):
+            ro.compute_uniforms.update(obj.compute_uniforms)
 
 
     def render(self, render_objects: list, camera: 'Camera3D | Camera2D', width: int, height: int, h_range=None, v_range=None):
 
         for ro in render_objects:
-            if ro.compute_shader:
-                ro.vbo.bind_to_storage_buffer(0)
-                group_size = (ro.num_vertexes + 255) // 256
-                ro.compute_shader.run(group_x=group_size)
 
             program = ro.vao.program
             program["u_view"].write(camera.get_view_matrix())
@@ -98,7 +106,7 @@ class Renderer:
                 program["u_model"].write(np.eye(4, dtype=np.float32).tobytes())
                 program["u_light_pos"].write(np.array([10.0, 20.0, 10.0], dtype=np.float32).tobytes())
                 program["u_view_pos"].write(camera.get_position().tobytes())
-
+                
             if ro.program_id == ProgramID.GRID:
                 # Import Camera3D for isinstance check
                 from .camera import Camera3D

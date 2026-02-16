@@ -434,16 +434,19 @@ class LorenzAttractor(SceneObject):
 
     def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):
         super().__init__(RenderMode=RenderMode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
-        self.sigma = sigma
-        self.rho = rho
-        self.beta = beta
-        self.dt = dt
-        self.steps = steps
-        self.num_points = num_points
-        self.vertices = self.create_initial_points(num_points=self.num_points)
+        self.uniforms: dict = {
+            'sigma': sigma,
+            'rho': rho,
+            'beta': beta,
+            'dt': dt,
+            'steps': steps
+        }
+        self.vertices = self.create_initial_points(num_points=num_points)
 
     def to_dict(self):
-        return super().to_dict()
+        d = super().to_dict()
+        d['uniforms'] = self.uniforms
+        return d
 
     def create_initial_points(self,num_points: int) -> np.ndarray:
         # Note: We are not including color data here, as the fragment shader will assign a color.
