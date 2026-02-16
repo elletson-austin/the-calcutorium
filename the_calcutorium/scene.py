@@ -40,6 +40,7 @@ class SceneObject:
         self.ProgramID = ProgramID
         self.visibility = visibility # arbitrary visibility 
         self.Is2d = Is2d             # visibility determined by dimension
+        self.name = None
 
     def to_dict(self):
         return {'type': self.__class__.__name__}
@@ -422,7 +423,7 @@ class Grid(SceneObject):
         if not (np.allclose(self.h_range, self.default_h_range) and \
                 np.allclose(self.v_range, self.default_v_range) and \
                 np.isclose(self.spacing, self.default_spacing) and \
-                self.plane != 'xy'):
+                self.plane == 'xy'):
             self.h_range = self.default_h_range
             self.v_range = self.default_v_range
             self.spacing = self.default_spacing
@@ -441,6 +442,7 @@ class LorenzAttractor(SceneObject):
             'dt': dt,
             'steps': steps
         }
+        self.num_points = num_points
         self.vertices = self.create_initial_points(num_points=num_points)
 
     def to_dict(self):
@@ -448,7 +450,7 @@ class LorenzAttractor(SceneObject):
         d['uniforms'] = self.uniforms
         return d
 
-    def create_initial_points(self,num_points: int) -> np.ndarray:
+    def create_initial_points(self, num_points: int) -> np.ndarray:
         # Note: We are not including color data here, as the fragment shader will assign a color.
         # The vertex format is just position (x, y, z, w).
         initial_points = np.random.randn(num_points, 4).astype(np.float32)
