@@ -461,7 +461,7 @@ class LorenzAttractor(SceneObject):
 
 
 class NBody(SceneObject):
-    def __init__(self, num_bodies: int = 1024, dt: float = 0.01, G: float = 1.0, softening: float = 0.01, steps: int = 1):
+    def __init__(self, num_bodies: int = 4000, dt: float = 0.01, G: float = 1.0, softening: float = 0.1, steps: int = 5):
         super().__init__(RenderMode=RenderMode.POINTS, ProgramID=ProgramID.NBODY, dynamic=True)
         self.num_bodies = num_bodies
         self.uniforms: dict = {
