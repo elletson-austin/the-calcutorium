@@ -13,171 +13,187 @@ class RenderObject:
     def __init__(self,
         program_id: ProgramID,
         vao: moderngl.VertexArray,
-        vbo: moderngl.Buffer,
+        ssbo: moderngl.Buffer,
         Rendermode: RenderMode,
         num_vertexes: int,
         compute_shader: moderngl.ComputeShader = None,
-        compute_uniforms: dict = None, # Add compute_uniforms parameter
-        compute_bindings: list = None, # list of (buffer, binding_index) pairs for SSBOs
-        compute_groups: tuple = None,  # explicit (groups_x, groups_y, groups_z)
-        compute_local_size_x: int = 256, # fallback local size x used to compute groups
+        compute_uniforms: dict = {},
+        storage_buffers: list = [], # list of (buffer, binding_index) pairs for SSBOs
+        compute_groups: tuple = None,
+        compute_local_size_x: int = 256,
         ) -> None:
         
         self.program_id = program_id
         self.vao = vao
-        self.vbo = vbo
+        self.ssbo = ssbo  
         self.Rendermode = Rendermode
         self.num_vertexes = num_vertexes
         self.compute_shader = compute_shader
-        self.compute_uniforms = compute_uniforms if compute_uniforms is not None else {}
-        self.compute_bindings = compute_bindings if compute_bindings is not None else []
+        self.compute_uniforms = compute_uniforms
+        self.storage_buffers = storage_buffers  
         self.compute_groups = compute_groups
         self.compute_local_size_x = compute_local_size_x
 
 
+    def _release_buffer(self, buf):
+        """Safely release a single buffer, handling None and already-released buffers."""
+        if buf is not None:
+            try:
+                buf.release()
+            except Exception:
+                pass
+
     def release(self):
-        self.vao.release()
-        try:
-            self.vbo.release()
-        except Exception:
-            pass
-        # Release any extra buffers provided in compute_bindings
-        if getattr(self, 'compute_bindings', None):
-            for buf, _ in self.compute_bindings:
-                try:
-                    # avoid double releasing the primary vbo
-                    if buf is not self.vbo:
-                        buf.release()
-                except Exception:
-                    pass
+        """Release all GPU resources held by this render object."""
+        self._release_buffer(self.vao)
+        self._release_buffer(self.ssbo)
+        
+        # Release all storage buffers, avoiding double-release of primary ssbo
+        if hasattr(self, 'storage_buffers') and self.storage_buffers:
+            for buf, _ in self.storage_buffers:
+                if buf is not self.ssbo:
+                    self._release_buffer(buf)
 
 class Renderer:
     
-    def __init__(self, ctx: moderngl.Context):
+    def __init__(self, ctx: moderngl.Context = None):
         self.ctx = ctx
         self.program_manager = ProgramManager(self.ctx)
     
-    def _apply_compute_uniforms(self, compute_shader: moderngl.ComputeShader, uniforms: dict):
-        for name, value in uniforms.items():
-            if name not in compute_shader:
-                continue
+    def set_uniform(self, program: moderngl.Program, name=None, value=None, **uniforms) -> None:
+        """Set shader uniform(s). Accepts individual or multiple via kwargs."""
 
-            # Accept numpy arrays for uniform buffers or plain scalars
+        # Single uniform mode
+        if name is not None and value is not None:
+            self._set_single_uniform(program, name, value)
+        
+        # Multi uniform mode via kwargs
+        for uniform_name, uniform_value in uniforms.items():
+            self._set_single_uniform(program, uniform_name, uniform_value)
+
+    def _set_single_uniform(self, program: moderngl.Program, name: str, value) -> None:
+        """Set a single shader uniform with type handling and fallback."""
+        if name not in program:
+            return
+        
+        try:
+            # Try writing raw bytes for numpy arrays
+            if hasattr(value, 'tobytes') and not isinstance(value, (int, float, bool)):
+                program[name].write(value.tobytes())
+            else:
+                program[name].value = value
+        except Exception:
+            # Fallback to .value assignment
             try:
-                # If it's a numpy array or has tobytes, write raw bytes
-                if hasattr(value, 'tobytes') and not isinstance(value, (int, float, bool)):
-                    compute_shader[name].write(value.tobytes())
-                else:
-                    compute_shader[name].value = value
+                program[name].value = value
             except Exception:
-                # Best-effort: set .value fallback
-                try:
-                    compute_shader[name].value = value
-                except Exception:
-                    pass
+                pass
 
     def create_render_object(self, obj: SceneObject) -> RenderObject:
         program = self.program_manager.build_program(obj.ProgramID)
         
         if obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
-            vbo = self.ctx.buffer(obj.vertices.tobytes(), dynamic=True)
-            vao = self.ctx.vertex_array(program, [(vbo, "4f", "in_position")])
+            ssbo = self.ctx.buffer(obj.vertices.tobytes(), dynamic=True)
+            vao = self.ctx.vertex_array(program, [(ssbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
-            # Bind the vbo as the default SSBO at binding 0; for more
-            # complicated sims (N-Body) callers can supply additional
-            # compute_bindings when constructing the RenderObject.
+            
             ro = RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
-                vbo=vbo,
+                ssbo=ssbo,
                 Rendermode=obj.RenderMode,
                 num_vertexes=obj.num_points,
                 compute_shader=compute_shader,
-                compute_uniforms=obj.uniforms, # Pass compute_uniforms here
-                compute_bindings=[(vbo, 0)],
+                compute_uniforms=obj.uniforms,
+                storage_buffers=[(ssbo, 0)],
                 compute_local_size_x=256,
             )
             return ro
+            
         elif obj.ProgramID == ProgramID.NBODY:
             # Create SSBOs for positions, velocities and masses
-            pos_buf = self.ctx.buffer(obj.positions.tobytes(), dynamic=True)
-            vel_buf = self.ctx.buffer(obj.velocities.tobytes(), dynamic=True)
-            mass_buf = self.ctx.buffer(obj.masses.tobytes())
+            pos_ssbo = self.ctx.buffer(obj.positions.tobytes(), dynamic=True)
+            vel_ssbo = self.ctx.buffer(obj.velocities.tobytes(), dynamic=True)
+            mass_ssbo = self.ctx.buffer(obj.masses.tobytes(), dynamic=True)
 
-            vao = self.ctx.vertex_array(program, [(pos_buf, "4f", "in_position")])
+            vao = self.ctx.vertex_array(program, [(pos_ssbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
 
             ro = RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
-                vbo=pos_buf,
+                ssbo=pos_ssbo,
                 Rendermode=obj.RenderMode,
                 num_vertexes=obj.num_bodies,
                 compute_shader=compute_shader,
                 compute_uniforms=obj.uniforms,
-                compute_bindings=[(pos_buf, 0), (vel_buf, 1), (mass_buf, 2)],
+                storage_buffers=[(pos_ssbo, 0), (vel_ssbo, 1), (mass_ssbo, 2)],
                 compute_local_size_x=256,
             )
-            # Keep references to other buffers for updates
-            ro.vel_buffer = vel_buf
-            ro.mass_buffer = mass_buf
+            # Keep references for updates - stored in storage_buffers but also here for clarity
+            ro.vel_ssbo = vel_ssbo
+            ro.mass_ssbo = mass_ssbo
             return ro
         
         elif obj.ProgramID == ProgramID.SURFACE:
-            vbo = self.ctx.buffer(obj.vertices.tobytes())
-            vao = self.ctx.vertex_array(program, [(vbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])
+            ssbo = self.ctx.buffer(obj.vertices.tobytes())
+            vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])
             return RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
-                vbo=vbo,
+                ssbo=ssbo,
                 Rendermode=obj.RenderMode,
                 num_vertexes=len(obj.vertices) // 9
             )
 
-        else: # For other objects like BASIC_3D and GRID
-            vbo = self.ctx.buffer(obj.vertices.tobytes())
-            vao = self.ctx.vertex_array(program, [(vbo, "3f 3f", "in_position", "in_color")])
+        else:  # BASIC_3D, GRID, etc.
+            ssbo = self.ctx.buffer(obj.vertices.tobytes())
+            vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f", "in_position", "in_color")])
             return RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
-                vbo=vbo,
+                ssbo=ssbo,
                 Rendermode=obj.RenderMode,
                 num_vertexes=len(obj.vertices) // 6
             )
 
     def update_render_object(self, ro: RenderObject, obj: SceneObject):
-        # Handle NBody objects (positions/velocities/masses) specially
+        """Update render object with new data from scene object."""
         if obj.ProgramID == ProgramID.NBODY:
-            # Update position buffer
+            # Update position SSBO
             try:
-                ro.vbo.write(obj.positions.tobytes())
+                ro.ssbo.write(obj.positions.tobytes())
             except Exception:
                 pass
-            # Update velocity buffer if present on the render object
-            if hasattr(ro, 'vel_buffer') and hasattr(obj, 'velocities'):
+            # Update velocity SSBO if present
+            if hasattr(ro, 'vel_ssbo') and hasattr(obj, 'velocities'):
                 try:
-                    ro.vel_buffer.write(obj.velocities.tobytes())
+                    ro.vel_ssbo.write(obj.velocities.tobytes())
                 except Exception:
                     pass
-            # Update mass buffer if present
-            if hasattr(ro, 'mass_buffer') and hasattr(obj, 'masses'):
+            # Update mass SSBO if present
+            if hasattr(ro, 'mass_ssbo') and hasattr(obj, 'masses'):
                 try:
-                    ro.mass_buffer.write(obj.masses.tobytes())
+                    ro.mass_ssbo.write(obj.masses.tobytes())
                 except Exception:
                     pass
             ro.num_vertexes = getattr(obj, 'num_bodies', obj.positions.shape[0])
         else:
-            ro.vbo.write(obj.vertices.tobytes())
+            # Update primary SSBO
+            try:
+                ro.ssbo.write(obj.vertices.tobytes())
+            except Exception:
+                pass
+            
+            # Recalculate vertex count based on program type
             if obj.ProgramID == ProgramID.SURFACE:
                 ro.num_vertexes = len(obj.vertices) // 9
             elif obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
-                # For Lorenz attractor vertices are N x 4 float32 points
-                # and the SceneObject stores the intended number as num_points.
                 ro.num_vertexes = getattr(obj, 'num_points', obj.vertices.shape[0])
             else:
                 ro.num_vertexes = len(obj.vertices) // 6
 
-        # Update compute uniforms if available and applicable
+        # Update compute uniforms if available
         if hasattr(obj, 'uniforms'):
             ro.compute_uniforms.update(obj.uniforms)
 
@@ -191,29 +207,25 @@ class Renderer:
            v_range=None):
     
         for ro in render_objects:
-            # If this render object has a compute shader (e.g. Lorenz attractor),
-            # bind its SSBOs, apply uniforms and dispatch. Supports multiple
-            # bindings to make it easy to add N-Body style sims later.
+            # Bind SSBOs for any compute operations
             if getattr(ro, 'compute_shader', None) is not None:
-                # Bind any configured buffers to their binding points. If none
-                # are provided, fall back to binding the primary vbo at 0.
-                if getattr(ro, 'compute_bindings', None):
-                    for buf, binding in ro.compute_bindings:
+                if getattr(ro, 'storage_buffers', None):
+                    for buf, binding in ro.storage_buffers:
                         try:
                             buf.bind_to_storage_buffer(binding)
                         except Exception:
                             pass
                 else:
-                    # Backwards-compatible single buffer binding
+                    # Fallback: bind primary SSBO at binding 0
                     try:
-                        ro.vbo.bind_to_storage_buffer(0)
+                        ro.ssbo.bind_to_storage_buffer(0)
                     except Exception:
                         pass
 
-                # Apply any uniforms supplied for the compute shader
-                self._apply_compute_uniforms(ro.compute_shader, ro.compute_uniforms)
+                # Apply compute uniforms
+                self.set_uniform(ro.compute_shader, **ro.compute_uniforms)
 
-                # Determine dispatch size. If explicit groups provided, use them.
+                # Determine dispatch size
                 if getattr(ro, 'compute_groups', None) is not None:
                     gx, gy, gz = ro.compute_groups
                 elif getattr(ro, 'num_vertexes', None) is not None:
@@ -227,14 +239,12 @@ class Renderer:
                 try:
                     ro.compute_shader.run(gx, gy, gz)
                 except Exception:
-                    # If run fails with ints vs tuples, try alternative call
                     try:
                         ro.compute_shader.run((gx, gy, gz))
                     except Exception:
                         pass
 
-                # Try to issue a memory barrier if available so writes are visible
-                # to subsequent rendering. Not all moderngl versions expose it.
+                # Memory barrier for compute writes
                 try:
                     self.ctx.memory_barrier()
                 except Exception:
@@ -254,45 +264,29 @@ class Renderer:
     def _set_camera_uniforms(self, program, camera, width, height, h_range, v_range):
         """Set view and projection matrices."""
         program["u_view"].write(camera.get_view_matrix())
-        program["u_proj"].write(camera.get_projection_matrix(
-            width, height, h_range=h_range, v_range=v_range
-        ))
+        program["u_proj"].write(camera.get_projection_matrix(width, height, h_range=h_range, v_range=v_range))
 
 
     def _set_program_specific_uniforms(self, program, program_id, camera):
-        """Set uniforms specific to different shader programs."""
+        """Set uniforms specific to different shader programs via kwargs."""
         if program_id == ProgramID.SURFACE:
-            self._set_surface_uniforms(program, camera)
+            self.set_uniform(
+                program,
+                u_model=np.eye(4, dtype=np.float32),
+                u_light_pos=np.array([10.0, 20.0, 10.0], dtype=np.float32),
+                u_view_pos=camera.get_position(),
+            )
         elif program_id == ProgramID.NBODY:
-            # Basic uniforms for N-body rendering: model matrix, point size and color
-            if "u_model" in program:
-                program["u_model"].write(np.eye(4, dtype=np.float32).tobytes())
-            if "u_point_size" in program:
-                try:
-                    program["u_point_size"].value = 5.0
-                except Exception:
-                    pass
-            if "u_color" in program:
-                try:
-                    program["u_color"].write(np.array([1.0, 1.0, 1.0], dtype=np.float32).tobytes())
-                except Exception:
-                    try:
-                        program["u_color"].value = (1.0, 1.0, 1.0)
-                    except Exception:
-                        pass
+            self.set_uniform(
+                program,
+                u_model=np.eye(4, dtype=np.float32),
+                u_point_size=5.0,
+                u_color=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            )
         
-        # Set alpha multiplier based on program type and camera
+        # Set alpha multiplier for all program types
         alpha_multiplier = self._get_alpha_multiplier(program_id, camera)
-        if "u_alpha_multiplier" in program:
-            program["u_alpha_multiplier"].value = alpha_multiplier
-
-
-    def _set_surface_uniforms(self, program, camera):
-        """Set uniforms for surface rendering."""
-        program["u_model"].write(np.eye(4, dtype=np.float32).tobytes())
-        program["u_light_pos"].write(np.array([10.0, 20.0, 10.0], dtype=np.float32).tobytes())
-        program["u_view_pos"].write(camera.get_position().tobytes())
-
+        self.set_uniform(program, "u_alpha_multiplier", alpha_multiplier)
 
     def _get_alpha_multiplier(self, program_id, camera):
         """Calculate alpha multiplier based on program type and camera."""
@@ -300,7 +294,6 @@ class Renderer:
         if program_id == ProgramID.GRID and isinstance(camera, Camera3D):
             return 0.2
         return 1.0
-
 
     def _get_render_mode(self, render_mode):
         """Map RenderMode enum to moderngl constant."""

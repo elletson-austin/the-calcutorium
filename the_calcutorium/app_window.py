@@ -35,9 +35,6 @@ class MainWindow(QMainWindow):
         axes.name = "axes"
         self.scene.objects.append(axes)
         
-        grid = Grid()
-        grid.name = "grid"
-        self.scene.objects.append(grid)
 
         # Create the View (PySideRenderSpace)
         self.render_widget = RenderWindow()

@@ -28,7 +28,6 @@ class ProgramID(Enum):
     SURFACE = auto()
 
 
-
 class SceneObject:
     def __init__(self, 
                  RenderMode: RenderMode, 
@@ -85,17 +84,13 @@ class Axes(SceneObject):
         super().__init__(RenderMode=RenderMode.LINES, Is2d=False)
         self.length = length
 
-        # Each line is two points with RGB color
-        self.vertices = np.array([
-            # X axis (red)
-            -length, 0, 0, 1, 0, 0,
-             length, 0, 0, 1, 0, 0,
-            # Y axis (green)
-            0, -length, 0, 0, 1, 0,
-            0,  length, 0, 0, 1, 0,
-            # Z axis (blue)
-            0, 0, -length, 0, 0, 1,
-            0, 0,  length, 0, 0, 1,
+        self.vertices = np.array([  # Each line is two points with RGB color
+            -length, 0, 0, 1, 0, 0, # X axis (red)
+             length, 0, 0, 1, 0, 0, # X axis (red)
+            0, -length, 0, 0, 1, 0, # Y axis (green)
+            0,  length, 0, 0, 1, 0, # Y axis (green)
+            0, 0, -length, 0, 0, 1, # Z axis (blue)
+            0, 0,  length, 0, 0, 1, # Z axis (blue)
         ], dtype=np.float32)
 
         self.RenderMode = RenderMode.LINES
@@ -299,12 +294,10 @@ class MathFunction(SceneObject):
         output_var_str = str(self.output_var)
 
         # Define the axis mapping for each plane: (horizontal, vertical, constant)
-        plane_axis_map = {
-            'xy': ('x', 'y', 'z'),
-            'xz': ('x', 'z', 'y'),
-            'yz': ('z', 'y', 'x')
-        }
-        
+        plane_axis_map = {'xy': ('x', 'y', 'z'),
+                          'xz': ('x', 'z', 'y'),
+                          'yz': ('z', 'y', 'x')}
+            
         h_axis, v_axis, const_axis = plane_axis_map.get(plane, ('x', 'y', 'z')) # Default to xy
 
         # Determine which actual axis (h_axis or v_axis) the independent variable maps to
@@ -323,7 +316,7 @@ class MathFunction(SceneObject):
                 self.is_dirty = True
             return
 
-        if self.current_plane != plane or \
+        if self.current_plane is not plane or \
            self.current_domain_range is None or \
            not np.allclose(self.current_domain_range, domain_range, atol=1e-2):
             
@@ -431,6 +424,7 @@ class Grid(SceneObject):
             self.vertices = self._generate_vertices_from_ranges()
             self.is_dirty = True
 
+
 class LorenzAttractor(SceneObject):
 
     def __init__(self, num_points: int = 100_000, sigma: float = 10.0, rho: float = 28.0, beta: float = 8.0 / 3.0, dt: float = 0.001, steps:int = 5):
@@ -440,8 +434,7 @@ class LorenzAttractor(SceneObject):
             'rho': rho,
             'beta': beta,
             'dt': dt,
-            'steps': steps
-        }
+            'steps': steps}
         self.num_points = num_points
         self.vertices = self.create_initial_points(num_points=num_points)
 
@@ -451,8 +444,6 @@ class LorenzAttractor(SceneObject):
         return d
 
     def create_initial_points(self, num_points: int) -> np.ndarray:
-        # Note: We are not including color data here, as the fragment shader will assign a color.
-        # The vertex format is just position (x, y, z, w).
         initial_points = np.random.randn(num_points, 4).astype(np.float32)
         initial_points[:, :3] *= 2.0
         initial_points[:, :3] += [1.0, 1.0, 1.0]
@@ -469,14 +460,10 @@ class NBody(SceneObject):
             'G': G,
             'softening': softening,
             'num_bodies': num_bodies,
-            'steps': steps
-        }
+            'steps': steps}
         self.positions = self._create_initial_positions(num_bodies)
         self.velocities = self._create_initial_velocities(num_bodies)
         self.masses = self._create_initial_masses(num_bodies)
-        # Provide a vertices field so the render pipeline's simple filter
-        # (which checks for a non-empty .vertices array) will include this
-        # object. Use the positions buffer as the vertex source.
         self.vertices = self.positions.flatten()
 
     def to_dict(self):
