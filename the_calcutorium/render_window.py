@@ -71,7 +71,6 @@ class RenderWindow(QOpenGLWidget):
 
     def _compute_2d_dynamic_ranges(self, h_axis: str, v_axis: str, width: int, height: int):
         """Compute dynamic horizontal and vertical ranges for 2D camera view.
-
         Returns a tuple (h_range, v_range) or (None, None) if not computable.
         """
         if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
