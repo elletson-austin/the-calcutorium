@@ -71,6 +71,62 @@ class Renderer:
         for uniform_name, uniform_value in uniforms.items():
             self._set_single_uniform(program, uniform_name, uniform_value)
 
+    def _create_buffer(self, data: bytes, *, dynamic: bool = False):
+        try:
+            return self.ctx.buffer(data, dynamic=dynamic)
+        except Exception:
+            try:
+                return self.ctx.buffer(data)
+            except Exception:
+                return None
+
+    def _safe_buffer_write(self, buf, data: bytes):
+        if buf is None:
+            return
+        try:
+            buf.write(data)
+        except Exception:
+            pass
+
+    def _bind_storage_buffers(self, ro):
+        if getattr(ro, 'storage_buffers', None):
+            for buf, binding in ro.storage_buffers:
+                try:
+                    buf.bind_to_storage_buffer(binding)
+                except Exception:
+                    pass
+        else:
+            try:
+                ro.ssbo.bind_to_storage_buffer(0)
+            except Exception:
+                pass
+
+    def _dispatch_compute(self, ro):
+        # Determine dispatch size
+        if getattr(ro, 'compute_groups', None) is not None:
+            gx, gy, gz = ro.compute_groups
+        elif getattr(ro, 'num_vertexes', None) is not None:
+            lx = getattr(ro, 'compute_local_size_x', 256)
+            gx = (ro.num_vertexes + lx - 1) // lx
+            gy, gz = 1, 1
+        else:
+            gx, gy, gz = 1, 1, 1
+
+        # Dispatch compute shader (try multiple call signatures)
+        try:
+            ro.compute_shader.run(gx, gy, gz)
+        except Exception:
+            try:
+                ro.compute_shader.run((gx, gy, gz))
+            except Exception:
+                pass
+
+        # Memory barrier for compute writes
+        try:
+            self.ctx.memory_barrier()
+        except Exception:
+            pass
+
     def _set_single_uniform(self, program: moderngl.Program, name: str, value) -> None:
         """Set a single shader uniform with type handling and fallback."""
         if name not in program:
@@ -93,10 +149,10 @@ class Renderer:
         program = self.program_manager.build_program(obj.ProgramID)
         
         if obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
-            ssbo = self.ctx.buffer(obj.vertices.tobytes(), dynamic=True)
+            ssbo = self._create_buffer(obj.vertices.tobytes(), dynamic=True)
             vao = self.ctx.vertex_array(program, [(ssbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
-            
+
             ro = RenderObject(
                 program_id=obj.ProgramID,
                 vao=vao,
@@ -112,9 +168,9 @@ class Renderer:
             
         elif obj.ProgramID == ProgramID.NBODY:
             # Create SSBOs for positions, velocities and masses
-            pos_ssbo = self.ctx.buffer(obj.positions.tobytes(), dynamic=True)
-            vel_ssbo = self.ctx.buffer(obj.velocities.tobytes(), dynamic=True)
-            mass_ssbo = self.ctx.buffer(obj.masses.tobytes(), dynamic=True)
+            pos_ssbo = self._create_buffer(obj.positions.tobytes(), dynamic=True)
+            vel_ssbo = self._create_buffer(obj.velocities.tobytes(), dynamic=True)
+            mass_ssbo = self._create_buffer(obj.masses.tobytes(), dynamic=True)
 
             vao = self.ctx.vertex_array(program, [(pos_ssbo, "4f", "in_position")])
             compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
@@ -136,7 +192,7 @@ class Renderer:
             return ro
         
         elif obj.ProgramID == ProgramID.SURFACE:
-            ssbo = self.ctx.buffer(obj.vertices.tobytes())
+            ssbo = self._create_buffer(obj.vertices.tobytes())
             vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])
             return RenderObject(
                 program_id=obj.ProgramID,
@@ -147,7 +203,7 @@ class Renderer:
             )
 
         else:  # BASIC_3D, GRID, etc.
-            ssbo = self.ctx.buffer(obj.vertices.tobytes())
+            ssbo = self._create_buffer(obj.vertices.tobytes())
             vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f", "in_position", "in_color")])
             return RenderObject(
                 program_id=obj.ProgramID,
@@ -161,29 +217,15 @@ class Renderer:
         """Update render object with new data from scene object."""
         if obj.ProgramID == ProgramID.NBODY:
             # Update position SSBO
-            try:
-                ro.ssbo.write(obj.positions.tobytes())
-            except Exception:
-                pass
-            # Update velocity SSBO if present
+            self._safe_buffer_write(ro.ssbo, obj.positions.tobytes())
             if hasattr(ro, 'vel_ssbo') and hasattr(obj, 'velocities'):
-                try:
-                    ro.vel_ssbo.write(obj.velocities.tobytes())
-                except Exception:
-                    pass
-            # Update mass SSBO if present
+                self._safe_buffer_write(ro.vel_ssbo, obj.velocities.tobytes())
             if hasattr(ro, 'mass_ssbo') and hasattr(obj, 'masses'):
-                try:
-                    ro.mass_ssbo.write(obj.masses.tobytes())
-                except Exception:
-                    pass
+                self._safe_buffer_write(ro.mass_ssbo, obj.masses.tobytes())
             ro.num_vertexes = getattr(obj, 'num_bodies', obj.positions.shape[0])
         else:
             # Update primary SSBO
-            try:
-                ro.ssbo.write(obj.vertices.tobytes())
-            except Exception:
-                pass
+            self._safe_buffer_write(ro.ssbo, obj.vertices.tobytes())
             
             # Recalculate vertex count based on program type
             if obj.ProgramID == ProgramID.SURFACE:
@@ -209,46 +251,11 @@ class Renderer:
         for ro in render_objects:
             # Bind SSBOs for any compute operations
             if getattr(ro, 'compute_shader', None) is not None:
-                if getattr(ro, 'storage_buffers', None):
-                    for buf, binding in ro.storage_buffers:
-                        try:
-                            buf.bind_to_storage_buffer(binding)
-                        except Exception:
-                            pass
-                else:
-                    # Fallback: bind primary SSBO at binding 0
-                    try:
-                        ro.ssbo.bind_to_storage_buffer(0)
-                    except Exception:
-                        pass
-
+                self._bind_storage_buffers(ro)
                 # Apply compute uniforms
                 self.set_uniform(ro.compute_shader, **ro.compute_uniforms)
-
-                # Determine dispatch size
-                if getattr(ro, 'compute_groups', None) is not None:
-                    gx, gy, gz = ro.compute_groups
-                elif getattr(ro, 'num_vertexes', None) is not None:
-                    lx = getattr(ro, 'compute_local_size_x', 256)
-                    gx = (ro.num_vertexes + lx - 1) // lx
-                    gy, gz = 1, 1
-                else:
-                    gx, gy, gz = 1, 1, 1
-
-                # Dispatch compute shader
-                try:
-                    ro.compute_shader.run(gx, gy, gz)
-                except Exception:
-                    try:
-                        ro.compute_shader.run((gx, gy, gz))
-                    except Exception:
-                        pass
-
-                # Memory barrier for compute writes
-                try:
-                    self.ctx.memory_barrier()
-                except Exception:
-                    pass
+                # Dispatch compute and perform memory barrier
+                self._dispatch_compute(ro)
 
             program = ro.vao.program
             

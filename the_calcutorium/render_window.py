@@ -57,27 +57,46 @@ class RenderWindow(QOpenGLWidget):
         h_axis, v_axis, plane_str = snap_map.get(cam2d.snap_mode, (None, None, None))
 
         if h_axis and v_axis:
-            dynamic_h_range, dynamic_v_range = None, None
+            dynamic_h_range, dynamic_v_range = self._compute_2d_dynamic_ranges(h_axis, v_axis, width, height)
+
+            if dynamic_h_range and dynamic_v_range:
+                self._apply_dynamic_ranges_to_scene(plane_str, dynamic_h_range, dynamic_v_range)
+
+            # If manual ranges are present, return them for use by the renderer
             if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
                 h_proj_range = self.manual_ranges[h_axis]
                 v_proj_range = self.manual_ranges[v_axis]
-                dynamic_h_range, dynamic_v_range = h_proj_range, v_proj_range
-            elif height > 0:
-                aspect = width / height
-                view_height = cam2d.distance
-                view_width = view_height * aspect
-                buffer = 1.05
-                axis_map = {'x': 0, 'y': 1, 'z': 2}
-                h_center, v_center = cam2d.position_center[axis_map[h_axis]], cam2d.position_center[axis_map[v_axis]]
-                h_min, h_max = h_center - (view_width / 2), h_center + (view_width / 2)
-                v_min, v_max = v_center - (view_height / 2), v_center + (view_height / 2)
-                dynamic_h_range, dynamic_v_range = (h_min, h_max), (v_min, v_max)
 
-            if dynamic_h_range and dynamic_v_range:
-                for obj in self.scene.objects:
-                    if isinstance(obj, Grid): obj.set_ranges(dynamic_h_range, dynamic_v_range, plane_str)
-                    elif isinstance(obj, MathFunction): obj.update_for_plane(plane_str, dynamic_h_range, dynamic_v_range)
         return h_proj_range, v_proj_range
+
+    def _compute_2d_dynamic_ranges(self, h_axis: str, v_axis: str, width: int, height: int):
+        """Compute dynamic horizontal and vertical ranges for 2D camera view.
+
+        Returns a tuple (h_range, v_range) or (None, None) if not computable.
+        """
+        if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
+            return self.manual_ranges[h_axis], self.manual_ranges[v_axis]
+
+        if height <= 0:
+            return None, None
+
+        cam2d = self.camera
+        aspect = width / height
+        view_height = cam2d.distance
+        view_width = view_height * aspect
+        axis_map = {'x': 0, 'y': 1, 'z': 2}
+        h_center = cam2d.position_center[axis_map[h_axis]]
+        v_center = cam2d.position_center[axis_map[v_axis]]
+        h_min, h_max = h_center - (view_width / 2), h_center + (view_width / 2)
+        v_min, v_max = v_center - (view_height / 2), v_center + (view_height / 2)
+        return (h_min, h_max), (v_min, v_max)
+
+    def _apply_dynamic_ranges_to_scene(self, plane_str: str, h_range, v_range):
+        for obj in self.scene.objects:
+            if isinstance(obj, Grid):
+                obj.set_ranges(h_range, v_range, plane_str)
+            elif isinstance(obj, MathFunction):
+                obj.update_for_plane(plane_str, h_range, v_range)
 
     def paintGL(self): # This is the corrected and single definition of paintGL
         self.makeCurrent()
@@ -119,16 +138,22 @@ class RenderWindow(QOpenGLWidget):
 
         # Add or update render objects
         for obj in filtered_scene_objs:
-            if getattr(obj, 'is_dirty', False) and obj in self.render_objects:
-                self.render_objects.pop(obj).release()
-                obj.is_dirty = False
-            if obj not in self.render_objects:
-                self.render_objects[obj] = self.renderer.create_render_object(obj)
+            self._add_or_update_render_object(obj)
 
         # Remove render objects that are no longer in the filtered set
         for obj in current_render_obj_keys - filtered_scene_objs:
-            if obj in self.render_objects:
-                self.render_objects.pop(obj).release()
+            self._remove_render_object_if_present(obj)
+
+    def _add_or_update_render_object(self, obj):
+        if getattr(obj, 'is_dirty', False) and obj in self.render_objects:
+            self.render_objects.pop(obj).release()
+            obj.is_dirty = False
+        if obj not in self.render_objects:
+            self.render_objects[obj] = self.renderer.create_render_object(obj)
+
+    def _remove_render_object_if_present(self, obj):
+        if obj in self.render_objects:
+            self.render_objects.pop(obj).release()
 
 
     def closeEvent(self, event):
