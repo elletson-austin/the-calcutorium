@@ -147,30 +147,32 @@ class CommandHandler:
             self.render_window.set_camera(new_cam)
             self.output_widget.write("Switched to 3D Mode")
             return
-        
+
         if mode == "2d":
             if len(command_parts) < 3:
                 self.output_widget.write_error("Invalid 'view 2d' command. Expected: 'view 2d <plane>'. Use 'xy', 'xz', or 'yz'.")
                 return
-            
             plane = command_parts[2].lower()
-            snap_map = {"xy": SnapMode.XY, "xz": SnapMode.XZ, "yz": SnapMode.YZ}
-            snap_mode = snap_map.get(plane)
-
-            if snap_mode:
-                if isinstance(current_cam, Camera2D) and current_cam.snap_mode == snap_mode:
-                    self.output_widget.write(f"Already in 2D Mode ({plane.upper()} Plane).")
-                    return
-                new_cam = Camera2D(
-                    position_center=current_cam.position_center,
-                    distance=current_cam.distance,
-                    snap_mode=snap_mode
-                )
-                self.render_window.set_camera(new_cam)
-                self.output_widget.write(f"Switched to 2D Mode ({plane.upper()} Plane)")
-            else:
-                self.output_widget.write_error(f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'.")
+            self._view_2d(plane, current_cam)
             return
+
+    def _view_2d(self, plane: str, current_cam):
+        from .camera import Camera2D
+        from .render_types import SnapMode
+        snap_map = {"xy": SnapMode.XY, "xz": SnapMode.XZ, "yz": SnapMode.YZ}
+        snap_mode = snap_map.get(plane)
+
+        if not snap_mode:
+            self.output_widget.write_error(f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'.")
+            return
+
+        if isinstance(current_cam, Camera2D) and current_cam.snap_mode == snap_mode:
+            self.output_widget.write(f"Already in 2D Mode ({plane.upper()} Plane).")
+            return
+
+        new_cam = Camera2D(position_center=current_cam.position_center, distance=current_cam.distance, snap_mode=snap_mode)
+        self.render_window.set_camera(new_cam)
+        self.output_widget.write(f"Switched to 2D Mode ({plane.upper()} Plane)")
 
     def _range_command(self, command_parts: list[str]):
         from .camera import Camera2D
@@ -218,38 +220,41 @@ class CommandHandler:
             h_axis, v_axis = 'z', 'y' # Z is horizontal, Y is vertical
 
         if h_axis and v_axis and h_axis in self.render_window.manual_ranges and v_axis in self.render_window.manual_ranges:
-            h_range = self.render_window.manual_ranges[h_axis]
-            v_range = self.render_window.manual_ranges[v_axis]
+            self._adjust_camera_for_manual_ranges(h_axis, v_axis)
 
-            # Update camera center
-            axis_map = {'x': 0, 'y': 1, 'z': 2}
-            self.render_window.camera.position_center[axis_map[h_axis]] = (h_range[0] + h_range[1]) / 2
-            self.render_window.camera.position_center[axis_map[v_axis]] = (v_range[0] + v_range[1]) / 2
-            
-            range_width = h_range[1] - h_range[0]
-            range_height = v_range[1] - v_range[0]
-            
-            if range_width <= 0 or range_height <= 0:
-                self.output_widget.write_error("Calculated range width or height is non-positive. Cannot adjust camera.")
-                return
-            
-            range_aspect = range_width / range_height
-            
-            width, height = self.render_window.width(), self.render_window.height()
-            if height == 0:
-                self.output_widget.write_error("Render widget height is zero. Cannot adjust camera aspect.")
-                return
-            window_aspect = width / height
-            
-            # Adjust camera distance to fit the range within the window, maintaining chosen aspect
-            if window_aspect > range_aspect:
-                # Window is wider than the desired range, fit to height
-                self.render_window.camera.distance = range_height
-            else:
-                # Window is taller or equal aspect, fit to width
-                self.render_window.camera.distance = range_width / window_aspect
-            
-            self.output_widget.write(f"Camera adjusted to fit manual ranges for {h_axis}/{v_axis} plane.")
+    def _adjust_camera_for_manual_ranges(self, h_axis: str, v_axis: str):
+        h_range = self.render_window.manual_ranges[h_axis]
+        v_range = self.render_window.manual_ranges[v_axis]
+
+        # Update camera center
+        axis_map = {'x': 0, 'y': 1, 'z': 2}
+        self.render_window.camera.position_center[axis_map[h_axis]] = (h_range[0] + h_range[1]) / 2
+        self.render_window.camera.position_center[axis_map[v_axis]] = (v_range[0] + v_range[1]) / 2
+
+        range_width = h_range[1] - h_range[0]
+        range_height = v_range[1] - v_range[0]
+
+        if range_width <= 0 or range_height <= 0:
+            self.output_widget.write_error("Calculated range width or height is non-positive. Cannot adjust camera.")
+            return
+
+        range_aspect = range_width / range_height
+
+        width, height = self.render_window.width(), self.render_window.height()
+        if height == 0:
+            self.output_widget.write_error("Render widget height is zero. Cannot adjust camera aspect.")
+            return
+        window_aspect = width / height
+
+        # Adjust camera distance to fit the range within the window, maintaining chosen aspect
+        if window_aspect > range_aspect:
+            # Window is wider than the desired range, fit to height
+            self.render_window.camera.distance = range_height
+        else:
+            # Window is taller or equal aspect, fit to width
+            self.render_window.camera.distance = range_width / window_aspect
+
+        self.output_widget.write(f"Camera adjusted to fit manual ranges for {h_axis}/{v_axis} plane.")
 
     def _add_command(self, command_parts: list[str]):
         from .scene import MathFunction, LorenzAttractor, NBody # Import here for type checking
@@ -259,52 +264,60 @@ class CommandHandler:
 
         type_ = command_parts[1].lower()
         if type_ == "lorenz":
-            # Check if a Lorenz attractor already exists
-            for obj in self.scene.objects:
-                if isinstance(obj, LorenzAttractor):
-                    self.output_widget.write("Lorenz attractor already exists in the scene.")
-                    return
-            lorenz = LorenzAttractor()
-            lorenz.name = "Lorenz Attractor"
-            self.scene.objects.append(lorenz)
-            self.output_widget.write("Added Lorenz Attractor.")
-            self.update_function_editors_callback() # Lorenz is not a function, but might need editor update
+            self._add_lorenz()
             return
 
         if type_ == "nbody":
-            # Check if an NBody already exists
-            for obj in self.scene.objects:
-                if isinstance(obj, NBody):
-                    self.output_widget.write("N-body simulation already exists in the scene.")
-                    return
-            nbody = NBody()
-            nbody.name = "N-Body Simulation"
-            self.scene.objects.append(nbody)
-            self.output_widget.write("Added N-Body Simulation.")
-            self.update_function_editors_callback()
+            self._add_nbody()
             return
-        
+
         if type_ == "func":
             if len(command_parts) < 3:
                 self.output_widget.write_error(f"Invalid 'add func' command. Expected: add func \"<value>\".")
                 return
-            
             value_string = command_parts[2]
-
-            try:
-                # Check if a function with this equation string already exists
-                for obj in self.scene.objects:
-                    if isinstance(obj, MathFunction) and obj.equation_str == value_string:
-                        self.output_widget.write(f"Function '{value_string}' already exists in the scene.")
-                        return
-                new_func = MathFunction(value_string)
-                new_func.name = value_string # Assign name for identification
-                self.scene.objects.append(new_func)
-                self.update_function_editors_callback()
-                self.output_widget.write(f"Added function: {value_string}")
-            except ValueError as e:
-                self.output_widget.write_error(f"Error adding function '{value_string}': {e}")
+            self._add_func(value_string)
             return
+
+    def _add_lorenz(self):
+        from .scene import LorenzAttractor
+        for obj in self.scene.objects:
+            if isinstance(obj, LorenzAttractor):
+                self.output_widget.write("Lorenz attractor already exists in the scene.")
+                return
+        lorenz = LorenzAttractor()
+        lorenz.name = "Lorenz Attractor"
+        self.scene.objects.append(lorenz)
+        self.output_widget.write("Added Lorenz Attractor.")
+        self.update_function_editors_callback()
+
+    def _add_nbody(self):
+        from .scene import NBody
+        for obj in self.scene.objects:
+            if isinstance(obj, NBody):
+                self.output_widget.write("N-body simulation already exists in the scene.")
+                return
+        nbody = NBody()
+        nbody.name = "N-Body Simulation"
+        self.scene.objects.append(nbody)
+        self.output_widget.write("Added N-Body Simulation.")
+        self.update_function_editors_callback()
+
+    def _add_func(self, value_string: str):
+        from .scene import MathFunction
+        try:
+            # Check if a function with this equation string already exists
+            for obj in self.scene.objects:
+                if isinstance(obj, MathFunction) and obj.equation_str == value_string:
+                    self.output_widget.write(f"Function '{value_string}' already exists in the scene.")
+                    return
+            new_func = MathFunction(value_string)
+            new_func.name = value_string # Assign name for identification
+            self.scene.objects.append(new_func)
+            self.update_function_editors_callback()
+            self.output_widget.write(f"Added function: {value_string}")
+        except ValueError as e:
+            self.output_widget.write_error(f"Error adding function '{value_string}': {e}")
     
     def _remove_command(self, command_parts: list[str]):
         from .scene import MathFunction # Import here for type checking
