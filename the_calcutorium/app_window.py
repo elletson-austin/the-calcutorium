@@ -1,27 +1,16 @@
-from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, QHBoxLayout, QScrollArea
-from PySide6.QtCore import Qt, QObject, QEvent # QObject and QEvent for event filter
+from PySide6.QtWidgets import QMainWindow, QApplication, QVBoxLayout, QWidget, QHBoxLayout
+from PySide6.QtCore import Qt
 
 # Import our custom components
-from .scene import Scene, Axes, MathFunction, LorenzAttractor, Grid
+from .scene import Scene, Axes, MathFunction
 from .render_window import RenderWindow
-from .camera import Camera2D, Camera3D
 from .input_widget import InputWidget
 from .function_editor_widget import FunctionEditorWidget
 from .output_widget import OutputWidget
 from .command_handler import CommandHandler
+from .ui_utils import TabKeyEventFilter, make_left_panel
+from .utils import safe_regenerate, sync_function_editors
 
-class TabKeyEventFilter(QObject):
-    def __init__(self, render_widget, parent=None):
-        super().__init__(parent)
-        self.render_widget = render_widget
-
-    def eventFilter(self, watched: QObject, event: QEvent):
-        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Tab:
-            if self.render_widget.mouse_hovering:
-                # Manually call the keyPressEvent of the render_widget
-                self.render_widget.keyPressEvent(event)
-                return True # Event handled, stop propagation
-        return False # Event not handled, continue propagation
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -36,60 +25,29 @@ class MainWindow(QMainWindow):
         self.scene.objects.append(axes)
         
 
-        # Create the View (PySideRenderSpace)
         self.render_widget = RenderWindow()
-        
-        # Connect the View to the Model
         self.render_widget.set_scene(self.scene)
 
         # Install global event filter for Tab key
         self.event_filter = TabKeyEventFilter(self.render_widget)
         QApplication.instance().installEventFilter(self.event_filter)
 
-        # A dictionary to map MathFunction objects to their editor widgets
         self.function_editors = {}
 
         # --- Layout Setup ---
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
-        # Main horizontal layout
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # --- Left Panel ---
-        left_panel = QWidget()
-        left_panel.setFixedWidth(300)
-        left_panel.setStyleSheet("background-color: #2E2E2E;")
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(5, 5, 5, 5)
-        left_layout.setSpacing(5) # Add spacing between widgets
-
-        # Scroll area for function editors
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_widget = QWidget()
-        self.function_editors_layout = QVBoxLayout(scroll_widget)
-        self.function_editors_layout.addStretch(1)
-        scroll_area.setWidget(scroll_widget)
-
-        # Input widget
+        # Input and output widgets
         self.input_win = InputWidget()
         self.input_win.command_entered.connect(self.handle_command)
-
-        # Output widget
         self.output_widget = OutputWidget()
-
         self.output_widget.write("hello world")
-        
-        
-        # New layout order and stretches
-        left_layout.addWidget(scroll_area, 1)
-        left_layout.addWidget(self.input_win)
-        left_layout.addWidget(self.output_widget, 1)
 
+        left_panel, self.function_editors_layout = make_left_panel(self.input_win, self.output_widget)
         main_layout.addWidget(left_panel)
         main_layout.addWidget(self.render_widget, 1)
 
@@ -108,57 +66,22 @@ class MainWindow(QMainWindow):
         self.output_widget.write("Manual range cleared due to user interaction. Returning to automatic ranging.")
 
     def update_function_editors(self):
-        # Get an ordered list of MathFunction objects from the scene
-        scene_funcs = [obj for obj in self.scene.objects if isinstance(obj, MathFunction)]
-        
-        # Sync self.function_editors with scene_funcs
-        # Remove editors for functions no longer in the scene
-        for func_obj in list(self.function_editors.keys()):
-            if func_obj not in scene_funcs:
-                widget = self.function_editors.pop(func_obj)
-                widget.setParent(None)
-                widget.deleteLater()
+        def factory(func):
+            w = FunctionEditorWidget(func)
+            w.equation_changed.connect(self.on_equation_changed)
+            return w
 
-        # Add new editors for functions new to the scene
-        for func_obj in scene_funcs:
-            if func_obj not in self.function_editors:
-                editor_widget = FunctionEditorWidget(func_obj)
-                editor_widget.equation_changed.connect(self.on_equation_changed)
-                self.function_editors[func_obj] = editor_widget
-
-        # --- Rebuild layout ---
-        
-        # Detach all editor widgets from the layout
-        for widget in self.function_editors.values():
-            widget.setParent(None)
-
-        # Re-add widgets in the correct order.
-        # Newest functions are at the end of scene_funcs, and should appear at the top of the UI.
-        for func_obj in reversed(scene_funcs):
-            widget = self.function_editors[func_obj]
-            # Insert at the top of the layout to have newest functions on top
-            self.function_editors_layout.insertWidget(0, widget)
+        sync_function_editors(self.scene, self.function_editors, self.function_editors_layout, factory)
 
     def on_equation_changed(self, math_function: MathFunction, new_equation: str):
-        self.output_widget.write(f"Equation changed for '{math_function.name}': '{new_equation}'")        
-        
-        editor = self.function_editors.get(math_function)
-        old_equation = math_function.equation_str
+        self.output_widget.write(f"Equation changed for '{math_function.name}': '{new_equation}'")
 
-        try:
-            math_function.regenerate(new_equation)
-            # Update name to reflect new equation
-            math_function.name = new_equation 
-        except ValueError as e:
-            self.output_widget.write_error(f"Error regenerating function: {e}")
-            # Revert the function and editor to the old state
-            try:
-                math_function.regenerate(old_equation)
-            except ValueError as e:
-                self.output_widget.write_error(f"Error reverting function to old state: {e}")
-                
+        editor = self.function_editors.get(math_function)
+        success, err = safe_regenerate(math_function, new_equation)
+        if not success:
+            self.output_widget.write_error(f"Error regenerating function: {err}")
             if editor:
-                editor.equation_input.setText(old_equation)
+                editor.equation_input.setText(getattr(math_function, "equation_str", ""))
 
 
     def handle_command(self, command: str):
