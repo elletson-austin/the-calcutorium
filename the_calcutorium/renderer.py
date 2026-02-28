@@ -202,7 +202,18 @@ class Renderer:
                 num_vertexes=len(obj.vertices) // 9
             )
 
-        else:  # BASIC_3D, GRID, etc.
+        elif obj.ProgramID == ProgramID.GRID:
+            ssbo = self._create_buffer(obj.vertices.tobytes())
+            vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f 1f", "in_position", "in_color", "in_is_major")])
+            return RenderObject(
+                program_id=obj.ProgramID,
+                vao=vao,
+                ssbo=ssbo,
+                Rendermode=obj.RenderMode,
+                num_vertexes=len(obj.vertices) // 7
+            )
+
+        else:  # BASIC_3D, etc.
             ssbo = self._create_buffer(obj.vertices.tobytes())
             vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f", "in_position", "in_color")])
             return RenderObject(
@@ -230,6 +241,8 @@ class Renderer:
             # Recalculate vertex count based on program type
             if obj.ProgramID == ProgramID.SURFACE:
                 ro.num_vertexes = len(obj.vertices) // 9
+            elif obj.ProgramID == ProgramID.GRID:
+                ro.num_vertexes = len(obj.vertices) // 7
             elif obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
                 ro.num_vertexes = getattr(obj, 'num_points', obj.vertices.shape[0])
             else:
@@ -240,15 +253,19 @@ class Renderer:
             ro.compute_uniforms.update(obj.uniforms)
 
 
-    def render(self, 
-           render_objects: list, 
-           camera: 'Camera3D | Camera2D', 
-           width: int, 
-           height: int, 
-           h_range=None, 
+    def render(self,
+           scene,
+           camera: 'Camera3D | Camera2D',
+           width: int,
+           height: int,
+           h_range=None,
            v_range=None):
-    
-        for ro in render_objects:
+        # Caller (e.g. RenderWindow) passes a list of RenderObjects and optional h_range/v_range
+        render_objects_list = scene if isinstance(scene, list) else []
+        h_proj_range = h_range
+        v_proj_range = v_range
+
+        for ro in render_objects_list:
             # Bind SSBOs for any compute operations
             if getattr(ro, 'compute_shader', None) is not None:
                 self._bind_storage_buffers(ro)
@@ -259,13 +276,80 @@ class Renderer:
 
             program = ro.vao.program
             
-            self._set_camera_uniforms(program, camera, width, height, h_range, v_range)
+            self._set_camera_uniforms(program, camera, width, height, h_proj_range, v_proj_range)
             self._set_program_specific_uniforms(program, ro.program_id, camera)
             
             render_mode = self._get_render_mode(ro.Rendermode)
             
             self.ctx.line_width = 2.0
             ro.vao.render(mode=render_mode)
+
+    def _prepare_scene(self, scene, camera, width, height):
+        from .camera import Camera2D
+        from .scene import Grid
+
+        h_proj_range, v_proj_range = None, None
+
+        if isinstance(camera, Camera2D):
+            h_proj_range, v_proj_range = self._update_2d_rendering_params(scene, camera, width, height)
+        else:  # 3D Camera
+            for obj in scene.objects:
+                if isinstance(obj, Grid):
+                    obj.update()
+
+        if isinstance(camera, Camera2D):
+            filtered_scene_objs = {obj for obj in scene.objects if
+                                   obj.is_2d and hasattr(obj, 'vertices') and obj.vertices.size > 0}
+        else:  # Camera3D
+            filtered_scene_objs = {obj for obj in scene.objects if
+                                   hasattr(obj, 'vertices') and obj.vertices.size > 0}
+
+        return filtered_scene_objs, h_proj_range, v_proj_range
+
+    def _update_2d_rendering_params(self, scene, camera, width, height):
+        from .render_types import SnapMode
+
+        h_proj_range, v_proj_range = None, None
+        cam2d = camera
+        snap_map = {SnapMode.XY: ('x', 'y', 'xy'), SnapMode.XZ: ('x', 'z', 'xz'), SnapMode.YZ: ('z', 'y', 'yz')}
+        h_axis, v_axis, plane_str = snap_map.get(cam2d.snap_mode, (None, None, None))
+
+        if h_axis and v_axis:
+            dynamic_h_range, dynamic_v_range = self._compute_2d_dynamic_ranges(cam2d, h_axis, v_axis, width, height)
+
+            if dynamic_h_range and dynamic_v_range:
+                self._apply_dynamic_ranges_to_scene(scene, plane_str, dynamic_h_range, dynamic_v_range)
+
+            if self.has_manual_range(h_axis) and self.has_manual_range(v_axis):
+                h_proj_range = self.get_manual_range(h_axis)
+                v_proj_range = self.get_manual_range(v_axis)
+
+        return h_proj_range, v_proj_range
+
+    def _compute_2d_dynamic_ranges(self, cam2d, h_axis, v_axis, width, height):
+        if self.has_manual_range(h_axis) and self.has_manual_range(v_axis):
+            return self.get_manual_range(h_axis), self.get_manual_range(v_axis)
+
+        if height <= 0:
+            return None, None
+
+        aspect = width / height
+        view_height = cam2d.distance
+        view_width = view_height * aspect
+        axis_map = {'x': 0, 'y': 1, 'z': 2}
+        h_center = cam2d.position_center[axis_map[h_axis]]
+        v_center = cam2d.position_center[axis_map[v_axis]]
+        h_min, h_max = h_center - (view_width / 2), h_center + (view_width / 2)
+        v_min, v_max = v_center - (view_height / 2), v_center + (view_height / 2)
+        return (h_min, h_max), (v_min, v_max)
+
+    def _apply_dynamic_ranges_to_scene(self, scene, plane_str, h_range, v_range):
+        from .scene import Grid, MathFunction
+        for obj in scene.objects:
+            if isinstance(obj, Grid):
+                obj.update(h_range=h_range, v_range=v_range, plane=plane_str)
+            elif isinstance(obj, MathFunction):
+                obj.update(plane=plane_str, h_range=h_range, v_range=v_range)
 
 
     def _set_camera_uniforms(self, program, camera, width, height, h_range, v_range):

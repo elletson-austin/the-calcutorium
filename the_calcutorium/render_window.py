@@ -1,8 +1,8 @@
 import moderngl
 import numpy as np
 from PySide6.QtOpenGLWidgets import QOpenGLWidget   
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
+from PySide6.QtCore import Qt, QTimer, Signal, QPoint
+from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent, QPainter, QFont, QColor
 
 from .scene import SceneObject, MathFunction, Grid
 from .render_types import SnapMode, Projection
@@ -21,7 +21,7 @@ class RenderWindow(QOpenGLWidget):
         self.screen = None
         self.renderer: Renderer = None
         self.mouse_hovering: bool = False
-        self.manual_ranges = {}
+        self._manual_ranges = {}
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -29,6 +29,22 @@ class RenderWindow(QOpenGLWidget):
         self.timer.timeout.connect(self.update)
         self.timer.start(16) # ~60 FPS
         self.render_objects: dict = {}
+
+    def get_manual_ranges(self):
+        return self._manual_ranges.copy()
+
+    def set_manual_range(self, axis: str, min_val: float, max_val: float):
+        self._manual_ranges[axis] = (min_val, max_val)
+        self.update()
+
+    def clear_manual_ranges(self):
+        if self._manual_ranges:
+            self._manual_ranges.clear()
+            self.manual_range_cleared.emit()
+            self.update()
+
+    def has_manual_range(self, axis: str):
+        return axis in self._manual_ranges
 
     def set_camera(self, camera):
         self.camera = camera
@@ -63,9 +79,9 @@ class RenderWindow(QOpenGLWidget):
                 self._apply_dynamic_ranges_to_scene(plane_str, dynamic_h_range, dynamic_v_range)
 
             # If manual ranges are present, return them for use by the renderer
-            if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
-                h_proj_range = self.manual_ranges[h_axis]
-                v_proj_range = self.manual_ranges[v_axis]
+            if self.has_manual_range(h_axis) and self.has_manual_range(v_axis):
+                h_proj_range = self._manual_ranges[h_axis]
+                v_proj_range = self._manual_ranges[v_axis]
 
         return h_proj_range, v_proj_range
 
@@ -73,8 +89,8 @@ class RenderWindow(QOpenGLWidget):
         """Compute dynamic horizontal and vertical ranges for 2D camera view.
         Returns a tuple (h_range, v_range) or (None, None) if not computable.
         """
-        if h_axis in self.manual_ranges and v_axis in self.manual_ranges:
-            return self.manual_ranges[h_axis], self.manual_ranges[v_axis]
+        if self.has_manual_range(h_axis) and self.has_manual_range(v_axis):
+            return self._manual_ranges[h_axis], self._manual_ranges[v_axis]
 
         if height <= 0:
             return None, None
@@ -93,9 +109,9 @@ class RenderWindow(QOpenGLWidget):
     def _apply_dynamic_ranges_to_scene(self, plane_str: str, h_range, v_range):
         for obj in self.scene.objects:
             if isinstance(obj, Grid):
-                obj.set_ranges(h_range, v_range, plane_str)
+                obj.update(h_range=h_range, v_range=v_range, plane=plane_str)
             elif isinstance(obj, MathFunction):
-                obj.update_for_plane(plane_str, h_range, v_range)
+                obj.update(plane=plane_str, h_range=h_range, v_range=v_range)
 
     def paintGL(self): # This is the corrected and single definition of paintGL
         self.makeCurrent()
@@ -117,12 +133,12 @@ class RenderWindow(QOpenGLWidget):
             h_proj_range, v_proj_range = self._update_2d_rendering_params(width, height)
         else: # 3D Camera
             for obj in self.scene.objects:
-                if isinstance(obj, Grid): obj.set_to_default()
+                if isinstance(obj, Grid): obj.update()
 
         # Determine the set of scene objects to be rendered based on camera type
         if isinstance(self.camera, Camera2D):
             # In 2D camera mode, only render objects explicitly marked as 2D
-            filtered_scene_objs = {obj for obj in self.scene.objects if obj.Is2d and hasattr(obj, 'vertices') and obj.vertices.size > 0}
+            filtered_scene_objs = {obj for obj in self.scene.objects if obj.is_2d and hasattr(obj, 'vertices') and obj.vertices.size > 0}
         else: # Camera3D
             # In 3D camera mode, render all objects that have vertices (both 2D and 3D)
             filtered_scene_objs = {obj for obj in self.scene.objects if hasattr(obj, 'vertices') and obj.vertices.size > 0}
@@ -130,6 +146,10 @@ class RenderWindow(QOpenGLWidget):
         self._manage_render_objects(filtered_scene_objs)
 
         self.renderer.render(list(self.render_objects.values()), self.camera, width, height, h_range=h_proj_range, v_range=v_proj_range)
+        
+        # Render grid coordinate labels
+        if isinstance(self.camera, Camera2D):
+            self._render_grid_labels(h_proj_range, v_proj_range)
 
 
     def _manage_render_objects(self, filtered_scene_objs: set):
@@ -154,6 +174,64 @@ class RenderWindow(QOpenGLWidget):
         if obj in self.render_objects:
             self.render_objects.pop(obj).release()
 
+    def _render_grid_labels(self, h_range, v_range):
+        """Render coordinate labels for grid lines using QPainter."""
+        if h_range is None or v_range is None:
+            return
+        
+        # Find the grid object
+        grid_obj = None
+        for obj in self.scene.objects:
+            if isinstance(obj, Grid):
+                grid_obj = obj
+                break
+        
+        if grid_obj is None:
+            return
+        
+        # Setup QPainter for 2D text rendering
+        painter = QPainter(self)
+        painter.setFont(QFont("Arial", 10))
+        painter.setPen(QColor(200, 200, 200))  # Light grey color for text
+        
+        width, height = self.width(), self.height()
+        
+        # Get camera snap mode to determine axis names
+        cam2d = self.camera
+        axis_names = {
+            SnapMode.XY: ('x', 'y'),
+            SnapMode.XZ: ('x', 'z'),
+            SnapMode.YZ: ('z', 'y'),
+        }
+        h_axis_name, v_axis_name = axis_names.get(cam2d.snap_mode, ('x', 'y'))
+        
+        # Calculate pixel-to-world conversion
+        h_pixels_per_unit = width / (h_range[1] - h_range[0])
+        v_pixels_per_unit = height / (v_range[1] - v_range[0])
+        
+        # Draw horizontal axis labels (bottom)
+        if hasattr(grid_obj, 'labels') and 'h_labels' in grid_obj.labels:
+            for h_val, h_min, h_max, h_idx in grid_obj.labels['h_labels']:
+                # Convert world coords to screen coords
+                screen_x = int((h_val - h_range[0]) * h_pixels_per_unit)
+                screen_y = height - 20  # Near bottom
+                
+                if 0 <= screen_x < width:
+                    label_text = f"{h_val:.1f}"
+                    painter.drawText(screen_x - 15, screen_y, 30, 20, Qt.AlignCenter, label_text)
+        
+        # Draw vertical axis labels (left)
+        if hasattr(grid_obj, 'labels') and 'v_labels' in grid_obj.labels:
+            for v_val, v_min, v_max, v_idx in grid_obj.labels['v_labels']:
+                # Convert world coords to screen coords
+                screen_y = int(height - (v_val - v_range[0]) * v_pixels_per_unit)
+                screen_x = 5  # Near left edge
+                
+                if 0 <= screen_y < height:
+                    label_text = f"{v_val:.1f}"
+                    painter.drawText(screen_x, screen_y - 10, 35, 20, Qt.AlignCenter, label_text)
+        
+        painter.end()
 
     def closeEvent(self, event):
         for ro in self.render_objects.values():
@@ -163,9 +241,7 @@ class RenderWindow(QOpenGLWidget):
 
     def update_camera(self, dt: float = 0.016):
         if self.input_state.left_mouse_pressed or abs(self.input_state.scroll_delta) > 0:
-            if self.manual_ranges:
-                self.manual_ranges.clear()
-                self.manual_range_cleared.emit()
+            self.clear_manual_ranges()
 
         self.camera.update(self.input_state, dt, self.width(), self.height())
 

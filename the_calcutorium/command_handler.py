@@ -1,9 +1,8 @@
 import shlex
-import json
 from typing import TYPE_CHECKING, Dict, Callable, List
 
 if TYPE_CHECKING:
-    from .scene import Scene, MathFunction, LorenzAttractor, NBody
+    from .scene import Scene, MathFunction, LinePlot, SurfacePlot, LorenzAttractor, NBody
     from .render_window import RenderWindow
     from .render_types import SnapMode
     from .camera import Camera2D, Camera3D
@@ -18,10 +17,7 @@ class CommandHandler:
 
         self.commands: Dict[str, Callable[[List[str]], None]] = {
             "help": self._help_command,
-            "list": self._list_command,
             "clear": self._clear_command,
-            "save": self._save_command,
-            "load": self._load_command,
             "view": self._view_command,
             "range": self._range_command,
             "add": self._add_command,
@@ -54,10 +50,7 @@ class CommandHandler:
     def _help_command(self, command_parts: list[str]):
         help_message = """Available commands:
   help - Display this help message
-  list - List all objects in the scene, with detailed information for functions
   clear - Clear all objects from the scene except the axes
-  save <filename> - Save the current scene to a file
-  load <filename> - Load a scene from a file
   view 3d - Switch to 3D view
   view 2d xy - Switch to 2D view on the XY plane
   view 2d xz - Switch to 2D view on the XZ plane
@@ -65,9 +58,7 @@ class CommandHandler:
   range <x|y|z> <min> <max> - Manually set the visible range for an axis (e.g., 'range x -10 10')
   range auto - Reset all axes to automatic ranging
   add lorenz - Add a Lorenz attractor to the scene
-    add nbody - Add an N-body simulation to the scene
-    start nbody [steps] - Start advancing the N-body simulation (optional steps per frame)
-    stop nbody - Stop advancing the N-body simulation
+  add nbody - Add an N-body simulation to the scene
   add func "<function_string>" - Add a mathematical function to the scene (e.g., 'add func "x**2"')
   remove func "<function_string>" - Remove a mathematical function from the scene (e.g., 'remove func "x**2"')"""
         self.output_widget.write(help_message)
@@ -77,57 +68,6 @@ class CommandHandler:
         self.scene.objects = [obj for obj in self.scene.objects if isinstance(obj, (Axes, Grid))]
         self.update_function_editors_callback()
         self.output_widget.write("Scene cleared.")
-
-    def _list_command(self, command_parts: list[str]):
-        from .scene import MathFunction # Import here for type checking
-        if not self.scene.objects:
-            self.output_widget.write("No objects in the scene.")
-            return
-        
-        self.output_widget.write("Objects in scene:")
-        
-        # Separate functions from other objects for display
-        functions = [obj for obj in self.scene.objects if isinstance(obj, MathFunction)]
-        other_objects = [obj for obj in self.scene.objects if not isinstance(obj, MathFunction)]
-
-        if functions:
-            self.output_widget.write("  --- Functions ---")
-            for i, func in enumerate(functions):
-                self.output_widget.write(f"    [{i}] Name: {func.name}, Equation: '{func.equation_str}'")
-        
-        if other_objects:
-            self.output_widget.write("  --- Other Objects ---")
-            for obj in other_objects:
-                self.output_widget.write(f"    Name: {getattr(obj, 'name', 'Unnamed Object')} ({type(obj).__name__})")
-
-    def _save_command(self, command_parts: list[str]):
-        if len(command_parts) < 2:
-            self.output_widget.write_error("Invalid 'save' command. Expected: save <filename>")
-            return
-        filename = command_parts[1]
-        try:
-            scene_data = self.scene.to_dict()
-            with open(filename, 'w') as f:
-                json.dump(scene_data, f, indent=4)
-            self.output_widget.write(f"Scene saved to {filename}")
-        except Exception as e:
-            self.output_widget.write_error(f"Error saving scene: {e}")
-
-    def _load_command(self, command_parts: list[str]):
-        if len(command_parts) < 2:
-            self.output_widget.write_error("Invalid 'load' command. Expected: load <filename>")
-            return
-        filename = command_parts[1]
-        try:
-            with open(filename, 'r') as f:
-                scene_data = json.load(f)
-            self.scene.from_dict(scene_data)
-            self.update_function_editors_callback()
-            self.output_widget.write(f"Scene loaded from {filename}")
-        except FileNotFoundError:
-            self.output_widget.write_error(f"Error: File not found '{filename}'")
-        except Exception as e:
-            self.output_widget.write_error(f"Error loading scene: {e}")
 
     def _view_command(self, command_parts: list[str]):
         from .camera import Camera3D, Camera2D
@@ -182,7 +122,7 @@ class CommandHandler:
             return
 
         if len(command_parts) == 2 and command_parts[1].lower() == 'auto':
-            self.render_window.manual_ranges.clear()
+            self.render_window.clear_manual_ranges()
             self.output_widget.write("Switched to automatic ranging.")
             return
 
@@ -205,7 +145,7 @@ class CommandHandler:
             self.output_widget.write_error("Min range value must be less than max value.")
             return
 
-        self.render_window.manual_ranges[axis_str] = (min_val, max_val)
+        self.render_window.set_manual_range(axis_str, min_val, max_val)
         self.output_widget.write(f"Set manual range for {axis_str}-axis to ({min_val}, {max_val}).")
 
         # Adjust camera center and distance if both relevant ranges are now manually set
@@ -219,12 +159,13 @@ class CommandHandler:
         elif current_snap_mode == SnapMode.YZ:
             h_axis, v_axis = 'z', 'y' # Z is horizontal, Y is vertical
 
-        if h_axis and v_axis and h_axis in self.render_window.manual_ranges and v_axis in self.render_window.manual_ranges:
+        if h_axis and v_axis and self.render_window.has_manual_range(h_axis) and self.render_window.has_manual_range(v_axis):
             self._adjust_camera_for_manual_ranges(h_axis, v_axis)
 
     def _adjust_camera_for_manual_ranges(self, h_axis: str, v_axis: str):
-        h_range = self.render_window.manual_ranges[h_axis]
-        v_range = self.render_window.manual_ranges[v_axis]
+        manual_ranges = self.render_window.get_manual_ranges()
+        h_range = manual_ranges[h_axis]
+        v_range = manual_ranges[v_axis]
 
         # Update camera center
         axis_map = {'x': 0, 'y': 1, 'z': 2}
@@ -304,14 +245,26 @@ class CommandHandler:
         self.update_function_editors_callback()
 
     def _add_func(self, value_string: str):
-        from .scene import MathFunction
+        from .scene import MathFunction, LinePlot, SurfacePlot
+        from .symbolic import SymbolicFunction
         try:
             # Check if a function with this equation string already exists
             for obj in self.scene.objects:
                 if isinstance(obj, MathFunction) and obj.equation_str == value_string:
                     self.output_widget.write(f"Function '{value_string}' already exists in the scene.")
                     return
-            new_func = MathFunction(value_string)
+
+            symbolic_func = SymbolicFunction(value_string)
+            num_vars = symbolic_func.get_num_domain_vars()
+
+            if num_vars == 1:
+                new_func = LinePlot(symbolic_func)
+            elif num_vars == 2:
+                new_func = SurfacePlot(symbolic_func)
+            else:
+                self.output_widget.write_error(f"Cannot plot function '{value_string}' with {num_vars} variables. Only 1 or 2 variables are supported.")
+                return
+            
             new_func.name = value_string # Assign name for identification
             self.scene.objects.append(new_func)
             self.update_function_editors_callback()
