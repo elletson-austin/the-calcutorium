@@ -1,23 +1,20 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Protocol, TYPE_CHECKING
-
-import numpy as np
+from typing import Protocol, TYPE_CHECKING, Any
 
 from .scene import SceneObject, ProgramID
 from .render_object import RenderObject
 
 if TYPE_CHECKING:
     from .renderer import Renderer
-
+else:
+    Renderer = Any
 class RenderAdapter(Protocol):
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject: ...
     def update(self, renderer: Renderer, ro: RenderObject, obj: SceneObject) -> None: ...
 
 
 @dataclass(frozen=True)
-class DefaultAdapter:
+class DefaultAdapter(RenderAdapter):
     """Default adapter for objects with obj.vertices and basic_3d shader inputs."""
 
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
@@ -32,7 +29,7 @@ class DefaultAdapter:
             num_vertexes=len(obj.vertices) // 6,
         )
 
-    def update(self, renderer: "Renderer", ro: RenderObject, obj: SceneObject) -> None:
+    def update(self, renderer: Renderer, ro: RenderObject, obj: SceneObject) -> None:
         renderer._safe_buffer_write(ro.ssbo, obj.vertices.tobytes())
         ro.num_vertexes = len(obj.vertices) // 6
         if hasattr(obj, "uniforms"):
@@ -40,8 +37,8 @@ class DefaultAdapter:
 
 
 @dataclass(frozen=True)
-class SurfaceAdapter:
-    def create(self, renderer: "Renderer", obj: SceneObject) -> RenderObject:
+class SurfaceAdapter(RenderAdapter):
+    def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
         program = renderer.program_manager.build_program(obj.ProgramID)
         ssbo = renderer._create_buffer(obj.vertices.tobytes())
         vao = renderer.ctx.vertex_array(program, [(ssbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])
@@ -53,7 +50,7 @@ class SurfaceAdapter:
             num_vertexes=len(obj.vertices) // 9,
         )
 
-    def update(self, renderer: "Renderer", ro: RenderObject, obj: SceneObject) -> None:
+    def update(self, renderer: Renderer, ro: RenderObject, obj: SceneObject) -> None:
         renderer._safe_buffer_write(ro.ssbo, obj.vertices.tobytes())
         ro.num_vertexes = len(obj.vertices) // 9
         if hasattr(obj, "uniforms"):
@@ -61,8 +58,8 @@ class SurfaceAdapter:
 
 
 @dataclass(frozen=True)
-class GridAdapter:
-    def create(self, renderer: "Renderer", obj: SceneObject) -> RenderObject:
+class GridAdapter(RenderAdapter):
+    def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
         program = renderer.program_manager.build_program(obj.ProgramID)
         ssbo = renderer._create_buffer(obj.vertices.tobytes())
         vao = renderer.ctx.vertex_array(program, [(ssbo, "3f 3f 1f", "in_position", "in_color", "in_is_major")])
@@ -74,7 +71,7 @@ class GridAdapter:
             num_vertexes=len(obj.vertices) // 7,
         )
 
-    def update(self, renderer: "Renderer", ro: RenderObject, obj: SceneObject) -> None:
+    def update(self, renderer: Renderer, ro: RenderObject, obj: SceneObject) -> None:
         renderer._safe_buffer_write(ro.ssbo, obj.vertices.tobytes())
         ro.num_vertexes = len(obj.vertices) // 7
         if hasattr(obj, "uniforms"):
@@ -82,8 +79,8 @@ class GridAdapter:
 
 
 @dataclass(frozen=True)
-class LorenzAdapter:
-    def create(self, renderer: "Renderer", obj: SceneObject) -> RenderObject:
+class LorenzAdapter(RenderAdapter):
+    def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
         program = renderer.program_manager.build_program(obj.ProgramID)
         ssbo = renderer._create_buffer(obj.vertices.tobytes(), dynamic=True)
         vao = renderer.ctx.vertex_array(program, [(ssbo, "4f", "in_position")])
@@ -101,7 +98,7 @@ class LorenzAdapter:
             compute_local_size_x=256,
         )
 
-    def update(self, renderer: "Renderer", ro: RenderObject, obj: SceneObject) -> None:
+    def update(self, renderer: Renderer, ro: RenderObject, obj: SceneObject) -> None:
         renderer._safe_buffer_write(ro.ssbo, obj.vertices.tobytes())
         ro.num_vertexes = getattr(obj, "num_points", obj.vertices.shape[0])
         if hasattr(obj, "uniforms"):
@@ -109,8 +106,8 @@ class LorenzAdapter:
 
 
 @dataclass(frozen=True)
-class NBodyAdapter:
-    def create(self, renderer: "Renderer", obj: SceneObject) -> RenderObject:
+class NBodyAdapter(RenderAdapter):
+    def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
         program = renderer.program_manager.build_program(obj.ProgramID)
 
         pos_ssbo = renderer._create_buffer(obj.positions.tobytes(), dynamic=True)
@@ -136,7 +133,7 @@ class NBodyAdapter:
         ro.mass_ssbo = mass_ssbo
         return ro
 
-    def update(self, renderer: "Renderer", ro: RenderObject, obj: SceneObject) -> None:
+    def update(self, renderer: Renderer, ro: RenderObject, obj: SceneObject) -> None:
         renderer._safe_buffer_write(ro.ssbo, obj.positions.tobytes())
         if hasattr(ro, "vel_ssbo") and hasattr(obj, "velocities"):
             renderer._safe_buffer_write(ro.vel_ssbo, obj.velocities.tobytes())
@@ -147,11 +144,11 @@ class NBodyAdapter:
             ro.compute_uniforms.update(obj.uniforms)
 
 
-ADAPTERS_BY_PROGRAM_ID: dict[ProgramID, RenderAdapter] = {
-    ProgramID.SURFACE: SurfaceAdapter(),
-    ProgramID.GRID: GridAdapter(),
-    ProgramID.LORENZ_ATTRACTOR: LorenzAdapter(),
-    ProgramID.NBODY: NBodyAdapter(),
-    ProgramID.BASIC_3D: DefaultAdapter(),
+ADAPTERS_BY_PROGRAM_ID: dict[ProgramID, type[RenderAdapter]] = {
+    ProgramID.SURFACE: SurfaceAdapter,
+    ProgramID.GRID: GridAdapter,
+    ProgramID.LORENZ_ATTRACTOR: LorenzAdapter,
+    ProgramID.NBODY: NBodyAdapter,
+    ProgramID.BASIC_3D: DefaultAdapter,
 }
 

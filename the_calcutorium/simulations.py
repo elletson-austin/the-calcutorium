@@ -11,7 +11,7 @@ class LorenzAttractor(SceneObject):
                 beta: float = 8.0 / 3.0, 
                 dt: float = 0.001, 
                 steps: int = 5):
-
+        
         super().__init__(RenderMode=RenderMode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
         self.uniforms: dict = {
             'sigma': sigma,
@@ -28,11 +28,8 @@ class LorenzAttractor(SceneObject):
         return d
 
     def create_initial_points(self, num_points: int) -> np.ndarray:
-        initial_points = np.random.randn(num_points, 4).astype(np.float32)
-        initial_points[:, :3] *= 2.0
-        initial_points[:, :3] += [1.0, 1.0, 1.0]
-        initial_points[:, 3] = 1.0
-        return initial_points
+        return np.random.randn(num_points, 3).astype(np.float32)*8.0
+
 
     def update(self, **kwargs):
         pass # Handled by the compute shader in the renderer

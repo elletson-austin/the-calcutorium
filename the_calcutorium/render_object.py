@@ -1,4 +1,3 @@
-from __future__ import annotations
 from dataclasses import dataclass
 import moderngl
 
@@ -27,8 +26,8 @@ class RenderObject:
                 pass
 
     def release(self) -> None:
-        self._release_buffer(self.vao)
-        self._release_buffer(self.ssbo)
+        RenderObject._release_buffer(self.vao)
+        RenderObject._release_buffer(self.ssbo)
 
         # Release all storage buffers, avoiding double-release of primary ssbo
         if self.storage_buffers:

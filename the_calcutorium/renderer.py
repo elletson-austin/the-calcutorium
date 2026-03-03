@@ -1,6 +1,12 @@
+from the_calcutorium.scene import ProgramID
+
+
+from the_calcutorium.render_adapters import RenderAdapter
+
+
 import moderngl
 import numpy as np
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .scene import SceneObject, ProgramID, RenderMode
 from .program_manager import ProgramManager
@@ -13,12 +19,12 @@ if TYPE_CHECKING:
 class Renderer:
     
     def __init__(self, ctx: moderngl.Context = None):
-        self.ctx = ctx
-        self.program_manager = ProgramManager(self.ctx)
-        self._adapters_by_program_id = dict(ADAPTERS_BY_PROGRAM_ID)
-        self._default_adapter = DefaultAdapter()
+        self.ctx: moderngl.Context = ctx
+        self.program_manager: ProgramManager = ProgramManager(self.ctx)
+        self._adapters_by_program_id: dict[ProgramID, type[RenderAdapter]] = dict[ProgramID, type[RenderAdapter]](ADAPTERS_BY_PROGRAM_ID) 
+        self._default_adapter: type[RenderAdapter] = DefaultAdapter
     
-    def set_uniform(self, program: moderngl.Program, name=None, value=None, **uniforms) -> None:
+    def set_uniform(self, program: moderngl.Program, name: str | None = None, value: Any | None = None, **uniforms: Any) -> None:
         """Set shader uniform(s). Accepts individual or multiple via kwargs."""
 
         # Single uniform mode
@@ -105,32 +111,32 @@ class Renderer:
 
     def create_render_object(self, obj: SceneObject) -> RenderObject:
         adapter = self._adapters_by_program_id.get(obj.ProgramID, self._default_adapter)
-        return adapter.create(self, obj)
+        return adapter().create(renderer=self, obj=obj)
 
     def update_render_object(self, ro: RenderObject, obj: SceneObject):
         """Update render object with new data from scene object."""
         adapter = self._adapters_by_program_id.get(obj.ProgramID, self._default_adapter)
-        adapter.update(self, ro, obj)
+        adapter().update(renderer=self, ro=ro, obj=obj)
 
 
     def render(self,
-           scene,
+           scene: list[RenderObject],
            camera: 'Camera3D | Camera2D',
            width: int,
            height: int,
-           h_range=None,
-           v_range=None):
+           h_range: tuple[float, float] | None = None,
+           v_range: tuple[float, float] | None = None):
         # Caller (e.g. RenderWindow) passes a list of RenderObjects and optional h_range/v_range
         render_objects_list = scene if isinstance(scene, list) else []
-        h_proj_range = h_range
-        v_proj_range = v_range
+        h_proj_range: tuple[float, float] | None = h_range
+        v_proj_range: tuple[float, float] | None = v_range
 
         for ro in render_objects_list:
             # Bind SSBOs for any compute operations
-            if getattr(ro, 'compute_shader', None) is not None:
+            if ro.compute_shader is not None:
                 self._bind_storage_buffers(ro)
                 # Apply compute uniforms
-                self.set_uniform(ro.compute_shader, **ro.compute_uniforms)
+                self.set_uniform(program=ro.compute_shader, **ro.compute_uniforms)
                 # Dispatch compute and perform memory barrier
                 self._dispatch_compute(ro)
 
