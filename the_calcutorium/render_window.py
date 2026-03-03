@@ -1,27 +1,29 @@
+from typing import Any
 import moderngl
 import numpy as np
 from PySide6.QtOpenGLWidgets import QOpenGLWidget   
 from PySide6.QtCore import Qt, QTimer, Signal, QPoint
-from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent, QPainter, QFont, QColor
+from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
 
-from .scene import SceneObject, MathFunction, Grid
+from .scene import SceneObject, MathFunction, Grid, Scene
 from .render_types import SnapMode, Projection
 from .camera import Camera3D, Camera2D, InputState
 from .renderer import Renderer
+from .overlay_labels import OverlayLabelRenderer
 
 class RenderWindow(QOpenGLWidget):
     manual_range_cleared = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.camera: Camera3D | Camera2D = Camera3D()
+        self.camera: Camera3D | Camera2D | None = Camera3D()
         self.input_state: InputState = InputState()
-        self.ctx: moderngl.Context = None
-        self.scene = None
-        self.screen = None
-        self.renderer: Renderer = None
+        self.ctx: moderngl.Context | None = None
+        self.scene: Scene | None = None
+        self.screen: moderngl.Framebuffer | None = None
+        self.renderer: Renderer | None = None
         self.mouse_hovering: bool = False
-        self._manual_ranges = {}
+        self._manual_ranges: dict[str, tuple[float, float]] = {}
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -29,31 +31,32 @@ class RenderWindow(QOpenGLWidget):
         self.timer.timeout.connect(self.update)
         self.timer.start(16) # ~60 FPS
         self.render_objects: dict = {}
+        self.overlay_labels: OverlayLabelRenderer | None = OverlayLabelRenderer(self)
 
-    def get_manual_ranges(self):
+    def get_manual_ranges(self) -> dict[str, tuple[float, float]]:
         return self._manual_ranges.copy()
 
-    def set_manual_range(self, axis: str, min_val: float, max_val: float):
+    def set_manual_range(self, axis: str, min_val: float, max_val: float) -> None:
         self._manual_ranges[axis] = (min_val, max_val)
         self.update()
 
-    def clear_manual_ranges(self):
+    def clear_manual_ranges(self) -> None:
         if self._manual_ranges:
             self._manual_ranges.clear()
             self.manual_range_cleared.emit()
             self.update()
 
-    def has_manual_range(self, axis: str):
+    def has_manual_range(self, axis: str) -> bool:
         return axis in self._manual_ranges
 
-    def set_camera(self, camera):
+    def set_camera(self, camera: Camera3D | Camera2D) -> None:
         self.camera = camera
         self.update()
 
-    def set_scene(self, scene):
+    def set_scene(self, scene: Scene) -> None:
         self.scene = scene
 
-    def initializeGL(self):
+    def initializeGL(self) -> None:
         self.makeCurrent()
         self.ctx = moderngl.create_context()
         self.ctx.enable(moderngl.DEPTH_TEST | moderngl.PROGRAM_POINT_SIZE | moderngl.BLEND)
@@ -61,12 +64,12 @@ class RenderWindow(QOpenGLWidget):
         self.renderer = Renderer(self.ctx)
         self.screen = self.ctx.detect_framebuffer()
 
-    def resizeGL(self, w: int, h: int):
+    def resizeGL(self, w: int, h: int) -> None:
         if self.ctx:
             self.ctx.viewport = (0, 0, w, h)
             self.screen = self.ctx.detect_framebuffer()
 
-    def _update_2d_rendering_params(self, width: int, height: int):
+    def _update_2d_rendering_params(self, width: int, height: int) -> tuple[float, float] | None:
         h_proj_range, v_proj_range = None, None
         cam2d = self.camera
         snap_map = {SnapMode.XY: ('x', 'y', 'xy'), SnapMode.XZ: ('x', 'z', 'xz'), SnapMode.YZ: ('z', 'y', 'yz')}
@@ -85,7 +88,7 @@ class RenderWindow(QOpenGLWidget):
 
         return h_proj_range, v_proj_range
 
-    def _compute_2d_dynamic_ranges(self, h_axis: str, v_axis: str, width: int, height: int):
+    def _compute_2d_dynamic_ranges(self, h_axis: str, v_axis: str, width: int, height: int) -> tuple[float, float] | None:
         """Compute dynamic horizontal and vertical ranges for 2D camera view.
         Returns a tuple (h_range, v_range) or (None, None) if not computable.
         """
@@ -106,14 +109,14 @@ class RenderWindow(QOpenGLWidget):
         v_min, v_max = v_center - (view_height / 2), v_center + (view_height / 2)
         return (h_min, h_max), (v_min, v_max)
 
-    def _apply_dynamic_ranges_to_scene(self, plane_str: str, h_range, v_range):
+    def _apply_dynamic_ranges_to_scene(self, plane_str: str, h_range: tuple[float, float], v_range: tuple[float, float]) -> None:
         for obj in self.scene.objects:
             if isinstance(obj, Grid):
                 obj.update(h_range=h_range, v_range=v_range, plane=plane_str)
             elif isinstance(obj, MathFunction):
                 obj.update(plane=plane_str, h_range=h_range, v_range=v_range)
 
-    def paintGL(self): # This is the corrected and single definition of paintGL
+    def paintGL(self) -> None: # This is the corrected and single definition of paintGL
         self.makeCurrent()
         if not all([self.ctx, self.scene, self.renderer, self.screen]):
             return
@@ -135,25 +138,23 @@ class RenderWindow(QOpenGLWidget):
             for obj in self.scene.objects:
                 if isinstance(obj, Grid): obj.update()
 
-        # Determine the set of scene objects to be rendered based on camera type
         if isinstance(self.camera, Camera2D):
-            # In 2D camera mode, only render objects explicitly marked as 2D
             filtered_scene_objs = {obj for obj in self.scene.objects if obj.is_2d and hasattr(obj, 'vertices') and obj.vertices.size > 0}
         else: # Camera3D
-            # In 3D camera mode, render all objects that have vertices (both 2D and 3D)
             filtered_scene_objs = {obj for obj in self.scene.objects if hasattr(obj, 'vertices') and obj.vertices.size > 0}
         
         self._manage_render_objects(filtered_scene_objs)
 
-        self.renderer.render(list(self.render_objects.values()), self.camera, width, height, h_range=h_proj_range, v_range=v_proj_range)
+        self.renderer.render(list[Any](self.render_objects.values()), self.camera, width, height, h_range=h_proj_range, v_range=v_proj_range)
         
-        # Render grid coordinate labels
         if isinstance(self.camera, Camera2D):
-            self._render_grid_labels(h_proj_range, v_proj_range)
+            self.overlay_labels.render_grid_labels(h_proj_range, v_proj_range)
+            self.overlay_labels.render_function_labels(h_proj_range, v_proj_range)
+            self.overlay_labels.render_object_labels(h_proj_range, v_proj_range)
 
 
-    def _manage_render_objects(self, filtered_scene_objs: set):
-        current_render_obj_keys = set(self.render_objects.keys())
+    def _manage_render_objects(self, filtered_scene_objs: set[SceneObject]) -> None:
+        current_render_obj_keys = set[Any](self.render_objects.keys())
 
         # Add or update render objects
         for obj in filtered_scene_objs:
@@ -163,83 +164,24 @@ class RenderWindow(QOpenGLWidget):
         for obj in current_render_obj_keys - filtered_scene_objs:
             self._remove_render_object_if_present(obj)
 
-    def _add_or_update_render_object(self, obj):
+    def _add_or_update_render_object(self, obj: SceneObject) -> None:
         if getattr(obj, 'is_dirty', False) and obj in self.render_objects:
             self.render_objects.pop(obj).release()
             obj.is_dirty = False
         if obj not in self.render_objects:
             self.render_objects[obj] = self.renderer.create_render_object(obj)
 
-    def _remove_render_object_if_present(self, obj):
+    def _remove_render_object_if_present(self, obj: SceneObject) -> None:
         if obj in self.render_objects:
             self.render_objects.pop(obj).release()
 
-    def _render_grid_labels(self, h_range, v_range):
-        """Render coordinate labels for grid lines using QPainter."""
-        if h_range is None or v_range is None:
-            return
-        
-        # Find the grid object
-        grid_obj = None
-        for obj in self.scene.objects:
-            if isinstance(obj, Grid):
-                grid_obj = obj
-                break
-        
-        if grid_obj is None:
-            return
-        
-        # Setup QPainter for 2D text rendering
-        painter = QPainter(self)
-        painter.setFont(QFont("Arial", 10))
-        painter.setPen(QColor(200, 200, 200))  # Light grey color for text
-        
-        width, height = self.width(), self.height()
-        
-        # Get camera snap mode to determine axis names
-        cam2d = self.camera
-        axis_names = {
-            SnapMode.XY: ('x', 'y'),
-            SnapMode.XZ: ('x', 'z'),
-            SnapMode.YZ: ('z', 'y'),
-        }
-        h_axis_name, v_axis_name = axis_names.get(cam2d.snap_mode, ('x', 'y'))
-        
-        # Calculate pixel-to-world conversion
-        h_pixels_per_unit = width / (h_range[1] - h_range[0])
-        v_pixels_per_unit = height / (v_range[1] - v_range[0])
-        
-        # Draw horizontal axis labels (bottom)
-        if hasattr(grid_obj, 'labels') and 'h_labels' in grid_obj.labels:
-            for h_val, h_min, h_max, h_idx in grid_obj.labels['h_labels']:
-                # Convert world coords to screen coords
-                screen_x = int((h_val - h_range[0]) * h_pixels_per_unit)
-                screen_y = height - 20  # Near bottom
-                
-                if 0 <= screen_x < width:
-                    label_text = f"{h_val:.1f}"
-                    painter.drawText(screen_x - 15, screen_y, 30, 20, Qt.AlignCenter, label_text)
-        
-        # Draw vertical axis labels (left)
-        if hasattr(grid_obj, 'labels') and 'v_labels' in grid_obj.labels:
-            for v_val, v_min, v_max, v_idx in grid_obj.labels['v_labels']:
-                # Convert world coords to screen coords
-                screen_y = int(height - (v_val - v_range[0]) * v_pixels_per_unit)
-                screen_x = 5  # Near left edge
-                
-                if 0 <= screen_y < height:
-                    label_text = f"{v_val:.1f}"
-                    painter.drawText(screen_x, screen_y - 10, 35, 20, Qt.AlignCenter, label_text)
-        
-        painter.end()
-
-    def closeEvent(self, event):
+    def closeEvent(self, event) -> None:
         for ro in self.render_objects.values():
             ro.release()
         super().closeEvent(event)
 
 
-    def update_camera(self, dt: float = 0.016):
+    def update_camera(self, dt: float = 0.016) -> None:
         if self.input_state.left_mouse_pressed or abs(self.input_state.scroll_delta) > 0:
             self.clear_manual_ranges()
 
@@ -249,7 +191,7 @@ class RenderWindow(QOpenGLWidget):
         self.input_state.scroll_delta = 0
 
 
-    def mousePressEvent(self, event: QMouseEvent):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         """Handle mouse button press events."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.input_state.left_mouse_pressed = True
@@ -258,7 +200,7 @@ class RenderWindow(QOpenGLWidget):
         self.input_state.mouse_pos[:] = (event.position().x(), event.position().y())
 
 
-    def mouseReleaseEvent(self, event: QMouseEvent):
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         """Handle mouse button release events."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.input_state.left_mouse_pressed = False
@@ -266,30 +208,30 @@ class RenderWindow(QOpenGLWidget):
             self.input_state.right_mouse_pressed = False
 
 
-    def mouseMoveEvent(self, event: QMouseEvent):
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         """Handle mouse movement events."""
         new_pos = np.array([event.position().x(), event.position().y()], dtype=np.float32)
         self.input_state.mouse_delta += new_pos - self.input_state.mouse_pos
         self.input_state.mouse_pos = new_pos
 
 
-    def wheelEvent(self, event: QWheelEvent):
+    def wheelEvent(self, event: QWheelEvent) -> None:
         """Handle mouse wheel scroll events for zooming."""
         self.input_state.scroll_delta = event.angleDelta().y() / 120.0
 
 
-    def enterEvent(self, event):
+    def enterEvent(self, event) -> None:
         """Handle mouse entering the widget."""
         self.mouse_hovering = True
         super().enterEvent(event)
 
-    def leaveEvent(self, event):
+    def leaveEvent(self, event) -> None:
         """Handle mouse leaving the widget."""
         self.mouse_hovering = False
         super().leaveEvent(event)
 
 
-    def keyPressEvent(self, event: QKeyEvent):
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events."""
         self.input_state.keys_held.add(event.key())
         
@@ -300,7 +242,7 @@ class RenderWindow(QOpenGLWidget):
 
         super().keyPressEvent(event)
 
-    def keyReleaseEvent(self, event: QKeyEvent):
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
         """Handle key release events."""
         self.input_state.keys_held.discard(event.key())
         super().keyReleaseEvent(event)

@@ -4,61 +4,19 @@ from typing import TYPE_CHECKING
 
 from .scene import SceneObject, ProgramID, RenderMode
 from .program_manager import ProgramManager
+from .render_object import RenderObject
+from .render_adapters import ADAPTERS_BY_PROGRAM_ID, DefaultAdapter
 
 if TYPE_CHECKING:
     from .camera import Camera3D, Camera2D
-
-class RenderObject:
-
-    def __init__(self,
-        program_id: ProgramID,
-        vao: moderngl.VertexArray,
-        ssbo: moderngl.Buffer,
-        Rendermode: RenderMode,
-        num_vertexes: int,
-        compute_shader: moderngl.ComputeShader = None,
-        compute_uniforms: dict = {},
-        storage_buffers: list = [], # list of (buffer, binding_index) pairs for SSBOs
-        compute_groups: tuple = None,
-        compute_local_size_x: int = 256,
-        ) -> None:
-        
-        self.program_id = program_id
-        self.vao = vao
-        self.ssbo = ssbo  
-        self.Rendermode = Rendermode
-        self.num_vertexes = num_vertexes
-        self.compute_shader = compute_shader
-        self.compute_uniforms = compute_uniforms
-        self.storage_buffers = storage_buffers  
-        self.compute_groups = compute_groups
-        self.compute_local_size_x = compute_local_size_x
-
-
-    def _release_buffer(self, buf):
-        """Safely release a single buffer, handling None and already-released buffers."""
-        if buf is not None:
-            try:
-                buf.release()
-            except Exception:
-                pass
-
-    def release(self):
-        """Release all GPU resources held by this render object."""
-        self._release_buffer(self.vao)
-        self._release_buffer(self.ssbo)
-        
-        # Release all storage buffers, avoiding double-release of primary ssbo
-        if hasattr(self, 'storage_buffers') and self.storage_buffers:
-            for buf, _ in self.storage_buffers:
-                if buf is not self.ssbo:
-                    self._release_buffer(buf)
 
 class Renderer:
     
     def __init__(self, ctx: moderngl.Context = None):
         self.ctx = ctx
         self.program_manager = ProgramManager(self.ctx)
+        self._adapters_by_program_id = dict(ADAPTERS_BY_PROGRAM_ID)
+        self._default_adapter = DefaultAdapter()
     
     def set_uniform(self, program: moderngl.Program, name=None, value=None, **uniforms) -> None:
         """Set shader uniform(s). Accepts individual or multiple via kwargs."""
@@ -146,111 +104,13 @@ class Renderer:
                 pass
 
     def create_render_object(self, obj: SceneObject) -> RenderObject:
-        program = self.program_manager.build_program(obj.ProgramID)
-        
-        if obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
-            ssbo = self._create_buffer(obj.vertices.tobytes(), dynamic=True)
-            vao = self.ctx.vertex_array(program, [(ssbo, "4f", "in_position")])
-            compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
-
-            ro = RenderObject(
-                program_id=obj.ProgramID,
-                vao=vao,
-                ssbo=ssbo,
-                Rendermode=obj.RenderMode,
-                num_vertexes=obj.num_points,
-                compute_shader=compute_shader,
-                compute_uniforms=obj.uniforms,
-                storage_buffers=[(ssbo, 0)],
-                compute_local_size_x=256,
-            )
-            return ro
-            
-        elif obj.ProgramID == ProgramID.NBODY:
-            # Create SSBOs for positions, velocities and masses
-            pos_ssbo = self._create_buffer(obj.positions.tobytes(), dynamic=True)
-            vel_ssbo = self._create_buffer(obj.velocities.tobytes(), dynamic=True)
-            mass_ssbo = self._create_buffer(obj.masses.tobytes(), dynamic=True)
-
-            vao = self.ctx.vertex_array(program, [(pos_ssbo, "4f", "in_position")])
-            compute_shader = self.program_manager.build_compute_shader(obj.ProgramID)
-
-            ro = RenderObject(
-                program_id=obj.ProgramID,
-                vao=vao,
-                ssbo=pos_ssbo,
-                Rendermode=obj.RenderMode,
-                num_vertexes=obj.num_bodies,
-                compute_shader=compute_shader,
-                compute_uniforms=obj.uniforms,
-                storage_buffers=[(pos_ssbo, 0), (vel_ssbo, 1), (mass_ssbo, 2)],
-                compute_local_size_x=256,
-            )
-            # Keep references for updates - stored in storage_buffers but also here for clarity
-            ro.vel_ssbo = vel_ssbo
-            ro.mass_ssbo = mass_ssbo
-            return ro
-        
-        elif obj.ProgramID == ProgramID.SURFACE:
-            ssbo = self._create_buffer(obj.vertices.tobytes())
-            vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])
-            return RenderObject(
-                program_id=obj.ProgramID,
-                vao=vao,
-                ssbo=ssbo,
-                Rendermode=obj.RenderMode,
-                num_vertexes=len(obj.vertices) // 9
-            )
-
-        elif obj.ProgramID == ProgramID.GRID:
-            ssbo = self._create_buffer(obj.vertices.tobytes())
-            vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f 1f", "in_position", "in_color", "in_is_major")])
-            return RenderObject(
-                program_id=obj.ProgramID,
-                vao=vao,
-                ssbo=ssbo,
-                Rendermode=obj.RenderMode,
-                num_vertexes=len(obj.vertices) // 7
-            )
-
-        else:  # BASIC_3D, etc.
-            ssbo = self._create_buffer(obj.vertices.tobytes())
-            vao = self.ctx.vertex_array(program, [(ssbo, "3f 3f", "in_position", "in_color")])
-            return RenderObject(
-                program_id=obj.ProgramID,
-                vao=vao,
-                ssbo=ssbo,
-                Rendermode=obj.RenderMode,
-                num_vertexes=len(obj.vertices) // 6
-            )
+        adapter = self._adapters_by_program_id.get(obj.ProgramID, self._default_adapter)
+        return adapter.create(self, obj)
 
     def update_render_object(self, ro: RenderObject, obj: SceneObject):
         """Update render object with new data from scene object."""
-        if obj.ProgramID == ProgramID.NBODY:
-            # Update position SSBO
-            self._safe_buffer_write(ro.ssbo, obj.positions.tobytes())
-            if hasattr(ro, 'vel_ssbo') and hasattr(obj, 'velocities'):
-                self._safe_buffer_write(ro.vel_ssbo, obj.velocities.tobytes())
-            if hasattr(ro, 'mass_ssbo') and hasattr(obj, 'masses'):
-                self._safe_buffer_write(ro.mass_ssbo, obj.masses.tobytes())
-            ro.num_vertexes = getattr(obj, 'num_bodies', obj.positions.shape[0])
-        else:
-            # Update primary SSBO
-            self._safe_buffer_write(ro.ssbo, obj.vertices.tobytes())
-            
-            # Recalculate vertex count based on program type
-            if obj.ProgramID == ProgramID.SURFACE:
-                ro.num_vertexes = len(obj.vertices) // 9
-            elif obj.ProgramID == ProgramID.GRID:
-                ro.num_vertexes = len(obj.vertices) // 7
-            elif obj.ProgramID == ProgramID.LORENZ_ATTRACTOR:
-                ro.num_vertexes = getattr(obj, 'num_points', obj.vertices.shape[0])
-            else:
-                ro.num_vertexes = len(obj.vertices) // 6
-
-        # Update compute uniforms if available
-        if hasattr(obj, 'uniforms'):
-            ro.compute_uniforms.update(obj.uniforms)
+        adapter = self._adapters_by_program_id.get(obj.ProgramID, self._default_adapter)
+        adapter.update(self, ro, obj)
 
 
     def render(self,
