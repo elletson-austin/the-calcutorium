@@ -52,15 +52,11 @@ class CommandHandler:
   help - Display this help message
   clear - Clear all objects from the scene except the axes
   view 3d - Switch to 3D view
-  view 2d xy - Switch to 2D view on the XY plane
-  view 2d xz - Switch to 2D view on the XZ plane
-  view 2d yz - Switch to 2D view on the YZ plane
-  range <x|y|z> <min> <max> - Manually set the visible range for an axis (e.g., 'range x -10 10')
+  view 2d <plane> - Switch to 2D view on the specified plane (e.g., 'view 2d xy', 'view 2d xz', 'view 2d yz')
+  range <axis> <min> <max> - Manually set the visible range for an axis (e.g., 'range x -10 10')
   range auto - Reset all axes to automatic ranging
-  add lorenz - Add a Lorenz attractor to the scene
-  add nbody - Add an N-body simulation to the scene
-  add func "<function_string>" - Add a mathematical function to the scene (e.g., 'add func "x**2"')
-  remove func "<function_string>" - Remove a mathematical function from the scene (e.g., 'remove func "x**2"')"""
+  add <type> - Add an object to the scene (e.g., 'add lorenz', 'add nbody', 'add func "x**2"')
+  remove <type> <name> - Remove an object from the scene (e.g., 'remove lorenz', 'remove nbody', 'remove func "x**2"')"""
         self.output_widget.write(help_message)
 
     def _clear_command(self, command_parts: list[str]):
