@@ -270,7 +270,7 @@ class SurfacePlot(MathFunction):
     
 class Grid(SceneObject):
     def __init__(self, h_range=(-250, 250), v_range=(-250, 250), spacing=1.0, plane='xy'):
-        super().__init__(RenderMode=RenderMode.LINES, is_2d=True)
+        super().__init__(RenderMode=RenderMode.LINES, is_2d=True, ProgramID=ProgramID.GRID)
         self.h_range = h_range
         self.v_range = v_range
         self.spacing = spacing
@@ -279,7 +279,6 @@ class Grid(SceneObject):
         self.default_v_range = v_range
         self.default_spacing = spacing
         self.major_interval = 5  # Major gridline every N minor lines
-        self.program_id = ProgramID.GRID
         self.labels = {}  # Will store label info for rendering
         self.update()
 
