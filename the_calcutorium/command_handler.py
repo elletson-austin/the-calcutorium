@@ -60,7 +60,7 @@ class CommandHandler:
         self.output_widget.write(help_message)
 
     def _clear_command(self, command_parts: list[str]):
-        from .scene import Axes, Grid # Import here to avoid circular dependency with TYPE_CHECKING
+        from .scene import Axes, Grid 
         self.scene.objects = [obj for obj in self.scene.objects if isinstance(obj, (Axes, Grid))]
         self.update_function_editors_callback()
         self.output_widget.write("Scene cleared.")
@@ -68,9 +68,6 @@ class CommandHandler:
     def _view_command(self, command_parts: list[str]):
         from .camera import Camera3D, Camera2D
         from .render_types import SnapMode
-        if len(command_parts) < 2:
-            self.output_widget.write_error("Invalid 'view' command. Expected: 'view <mode> [plane]'. Type 'help' for available commands.")
-            return
 
         mode = command_parts[1].lower()
         current_cam = self.render_window.camera
