@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
+
 import numpy as np
-from PySide6.QtCore import Qt # Keep Qt import for key definitions
+from PySide6.QtCore import Qt  # Keep Qt import for key definitions
 
 from .render_types import Projection, SnapMode
 
@@ -12,7 +13,9 @@ def _normalize(v: np.ndarray) -> np.ndarray:
     return v
 
 
-def _make_view_matrix(cam_pos: np.ndarray, target: np.ndarray, world_up: np.ndarray) -> np.ndarray:
+def _make_view_matrix(
+    cam_pos: np.ndarray, target: np.ndarray, world_up: np.ndarray
+) -> np.ndarray:
     """Compute a view matrix (column-major, flattened) from camera position, target and up vector."""
     forward = target - cam_pos
     forward = _normalize(forward)
@@ -32,8 +35,9 @@ def _make_view_matrix(cam_pos: np.ndarray, target: np.ndarray, world_up: np.ndar
 
     return view.T.flatten()
 
+
 @dataclass
-class InputState: # Tracks the state of the input
+class InputState:  # Tracks the state of the input
     mouse_pos: np.ndarray = field(
         default_factory=lambda: np.array([0, 0], dtype=np.float32)
     )
@@ -45,12 +49,15 @@ class InputState: # Tracks the state of the input
     right_mouse_pressed: bool = False
     scroll_delta: float = 0.0
 
+
 class Camera3D:
-    def __init__(self,
-                 position_center: np.ndarray = np.array([0.0, 0.0, 0.0], dtype=np.float32),
-                 rotation: np.ndarray = np.array([0.0, 45.0, 0.0], dtype=np.float32),
-                 distance: float = 50.0,
-                 fov: float = 60.0):
+    def __init__(
+        self,
+        position_center: np.ndarray = np.array([0.0, 0.0, 0.0], dtype=np.float32),
+        rotation: np.ndarray = np.array([0.0, 45.0, 0.0], dtype=np.float32),
+        distance: float = 50.0,
+        fov: float = 60.0,
+    ):
 
         self.position_center = position_center
         self.rotation = rotation
@@ -108,14 +115,14 @@ class Camera3D:
     def update(self, input_state: InputState, dt: float, width: int, height: int):
         # --- Mouse Rotation ---
         if input_state.left_mouse_pressed:
-            self.rotation[0] += input_state.mouse_delta[1] # Pitch
-            self.rotation[1] += input_state.mouse_delta[0] # Yaw
+            self.rotation[0] += input_state.mouse_delta[1]  # Pitch
+            self.rotation[1] += input_state.mouse_delta[0]  # Yaw
             self.rotation[0] = np.clip(self.rotation[0], -89.0, 89.0)
             self.rotation[1] %= 360.0
 
         # --- Mouse Zoom ---
         if abs(input_state.scroll_delta) > 0:
-            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1/1.1
+            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1 / 1.1
             self.distance = np.clip(self.distance * zoom_factor, 1.0, 500.0)
 
         # --- Keyboard Movement (WASD) ---
@@ -138,15 +145,22 @@ class Camera3D:
         if Qt.Key.Key_D in keys:
             self.position_center += right * move_speed
 
+
 class Camera2D:
-    def __init__(self,
-                 position_center: np.ndarray = None,
-                 distance: float = 50.0,
-                 snap_mode: SnapMode = SnapMode.XY):
-        self.position_center = np.array([0.0, 0.0, 0.0], dtype=np.float32) if position_center is None else position_center
+    def __init__(
+        self,
+        position_center: np.ndarray = np.array((0, 0, 0), dtype=np.float32),
+        distance: float = 50.0,
+        snap_mode: SnapMode = SnapMode.XY,
+    ):
+        self.position_center = (
+            np.array([0.0, 0.0, 0.0], dtype=np.float32)
+            if position_center is None
+            else position_center
+        )
         self.distance = distance
         self.snap_mode = snap_mode
-        self.projection = Projection.Orthographic # Always orthographic
+        self.projection = Projection.Orthographic  # Always orthographic
 
     def get_position(self) -> np.ndarray:
         pos = self.position_center.copy()
@@ -161,7 +175,11 @@ class Camera2D:
     def get_view_matrix(self) -> np.ndarray:
         cam_pos = self.get_position()
         target = self.position_center
-        world_up = np.array([0, 0, 1], dtype=np.float32) if self.snap_mode == SnapMode.XZ else np.array([0, 1, 0], dtype=np.float32)
+        world_up = (
+            np.array([0, 0, 1], dtype=np.float32)
+            if self.snap_mode == SnapMode.XZ
+            else np.array([0, 1, 0], dtype=np.float32)
+        )
         return _make_view_matrix(cam_pos, target, world_up)
 
     def get_projection_matrix(self, width, height, h_range=None, v_range=None):
@@ -190,11 +208,16 @@ class Camera2D:
             aspect_ratio = width / height
             pan_speed_h = self.distance * aspect_ratio / width if width > 0 else 0
             pan_speed_v = self.distance / height
-            self._pan(input_state.mouse_delta[0], input_state.mouse_delta[1], pan_speed_h, pan_speed_v)
+            self._pan(
+                input_state.mouse_delta[0],
+                input_state.mouse_delta[1],
+                pan_speed_h,
+                pan_speed_v,
+            )
 
         # --- Mouse Zoom ---
         if abs(input_state.scroll_delta) > 0:
-            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1/1.1
+            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1 / 1.1
             self.distance = np.clip(self.distance * zoom_factor, 1.0, 500.0)
 
     def _pan(self, dx: float, dy: float, pan_speed_h: float, pan_speed_v: float):

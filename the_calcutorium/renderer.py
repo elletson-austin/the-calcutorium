@@ -1,9 +1,3 @@
-from the_calcutorium.scene import ProgramID
-
-
-from the_calcutorium.render_adapters import RenderAdapter
-
-
 import moderngl
 import numpy as np
 from typing import TYPE_CHECKING, Any
@@ -11,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from .scene import SceneObject, ProgramID, RenderMode
 from .program_manager import ProgramManager
 from .render_object import RenderObject
-from .render_adapters import ADAPTERS_BY_PROGRAM_ID, DefaultAdapter
+from .render_adapters import ADAPTERS_BY_PROGRAM_ID, DefaultAdapter, RenderAdapter
 
 if TYPE_CHECKING:
     from .camera import Camera3D, Camera2D
