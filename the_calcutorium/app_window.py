@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from .command_handler import CommandHandler
-from .function_editor_widget import FunctionEditorWidget
+from .function_editor import FunctionEditorWidget
 from .input_widget import InputWidget
 from .output_widget import OutputWidget
 from .render_window import RenderWindow

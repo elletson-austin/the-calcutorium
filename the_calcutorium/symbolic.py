@@ -388,19 +388,32 @@ def parse(expr: str):
 # ---------------------------------------------------------------------------
 
 _NUMPY_FUNCTIONS = {
-    "sin": np.sin, "cos": np.cos, "tan": np.tan,
-    "asin": np.arcsin, "acos": np.arccos, "atan": np.arctan,
-    "sinh": np.sinh, "cosh": np.cosh, "tanh": np.tanh,
-    "asinh": np.arcsinh, "acosh": np.arccosh, "atanh": np.arctanh,
+    "sin": np.sin,
+    "cos": np.cos,
+    "tan": np.tan,
+    "asin": np.arcsin,
+    "acos": np.arccos,
+    "atan": np.arctan,
+    "sinh": np.sinh,
+    "cosh": np.cosh,
+    "tanh": np.tanh,
+    "asinh": np.arcsinh,
+    "acosh": np.arccosh,
+    "atanh": np.arctanh,
     "sec": lambda x: 1.0 / np.cos(x),
     "csc": lambda x: 1.0 / np.sin(x),
     "cot": lambda x: np.cos(x) / np.sin(x),
-    "exp": np.exp, "log": np.log, "ln": np.log,
-    "sqrt": np.sqrt, "cbrt": np.cbrt,
+    "exp": np.exp,
+    "log": np.log,
+    "ln": np.log,
+    "sqrt": np.sqrt,
+    "cbrt": np.cbrt,
     "abs": np.abs,
-    "floor": np.floor, "ceil": np.ceil,
+    "floor": np.floor,
+    "ceil": np.ceil,
     "sign": np.sign,
-    "min": np.minimum, "max": np.maximum,
+    "min": np.minimum,
+    "max": np.maximum,
 }
 
 
@@ -425,6 +438,7 @@ def _collect_variables(node) -> set[str]:
 # Symbolic Differentiation
 # ---------------------------------------------------------------------------
 
+
 # Derivative of outer function for chain rule: d/dx f(g(x)) = f'(g(x)) * g'(x)
 # Maps function name -> AST node representing f'(u) given u as a VariableNode("_u")
 def _derivative_of_func(name: str, u):
@@ -435,44 +449,95 @@ def _derivative_of_func(name: str, u):
         return UnaryOpNode("-", FunctionCallNode("sin", [u]))
     if name == "tan":
         # sec^2(u) = 1/cos^2(u)
-        return BinaryOpNode("/", NumberNode(1.0),
-                            BinaryOpNode("^", FunctionCallNode("cos", [u]), NumberNode(2.0)))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            BinaryOpNode("^", FunctionCallNode("cos", [u]), NumberNode(2.0)),
+        )
     if name == "asin":
         # 1/sqrt(1 - u^2)
-        return BinaryOpNode("/", NumberNode(1.0),
-                            FunctionCallNode("sqrt", [BinaryOpNode("-", NumberNode(1.0),
-                                                                    BinaryOpNode("^", u, NumberNode(2.0)))]))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            FunctionCallNode(
+                "sqrt",
+                [
+                    BinaryOpNode(
+                        "-", NumberNode(1.0), BinaryOpNode("^", u, NumberNode(2.0))
+                    )
+                ],
+            ),
+        )
     if name == "acos":
         # -1/sqrt(1 - u^2)
-        return UnaryOpNode("-", BinaryOpNode("/", NumberNode(1.0),
-                            FunctionCallNode("sqrt", [BinaryOpNode("-", NumberNode(1.0),
-                                                                    BinaryOpNode("^", u, NumberNode(2.0)))])))
+        return UnaryOpNode(
+            "-",
+            BinaryOpNode(
+                "/",
+                NumberNode(1.0),
+                FunctionCallNode(
+                    "sqrt",
+                    [
+                        BinaryOpNode(
+                            "-", NumberNode(1.0), BinaryOpNode("^", u, NumberNode(2.0))
+                        )
+                    ],
+                ),
+            ),
+        )
     if name == "atan":
         # 1/(1 + u^2)
-        return BinaryOpNode("/", NumberNode(1.0),
-                            BinaryOpNode("+", NumberNode(1.0), BinaryOpNode("^", u, NumberNode(2.0))))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            BinaryOpNode("+", NumberNode(1.0), BinaryOpNode("^", u, NumberNode(2.0))),
+        )
     if name == "sinh":
         return FunctionCallNode("cosh", [u])
     if name == "cosh":
         return FunctionCallNode("sinh", [u])
     if name == "tanh":
         # 1 - tanh^2(u) = sech^2(u)
-        return BinaryOpNode("-", NumberNode(1.0),
-                            BinaryOpNode("^", FunctionCallNode("tanh", [u]), NumberNode(2.0)))
+        return BinaryOpNode(
+            "-",
+            NumberNode(1.0),
+            BinaryOpNode("^", FunctionCallNode("tanh", [u]), NumberNode(2.0)),
+        )
     if name == "asinh":
         # 1/sqrt(u^2 + 1)
-        return BinaryOpNode("/", NumberNode(1.0),
-                            FunctionCallNode("sqrt", [BinaryOpNode("+", BinaryOpNode("^", u, NumberNode(2.0)),
-                                                                    NumberNode(1.0))]))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            FunctionCallNode(
+                "sqrt",
+                [
+                    BinaryOpNode(
+                        "+", BinaryOpNode("^", u, NumberNode(2.0)), NumberNode(1.0)
+                    )
+                ],
+            ),
+        )
     if name == "acosh":
         # 1/sqrt(u^2 - 1)
-        return BinaryOpNode("/", NumberNode(1.0),
-                            FunctionCallNode("sqrt", [BinaryOpNode("-", BinaryOpNode("^", u, NumberNode(2.0)),
-                                                                    NumberNode(1.0))]))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            FunctionCallNode(
+                "sqrt",
+                [
+                    BinaryOpNode(
+                        "-", BinaryOpNode("^", u, NumberNode(2.0)), NumberNode(1.0)
+                    )
+                ],
+            ),
+        )
     if name == "atanh":
         # 1/(1 - u^2)
-        return BinaryOpNode("/", NumberNode(1.0),
-                            BinaryOpNode("-", NumberNode(1.0), BinaryOpNode("^", u, NumberNode(2.0))))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            BinaryOpNode("-", NumberNode(1.0), BinaryOpNode("^", u, NumberNode(2.0))),
+        )
     if name == "exp":
         return FunctionCallNode("exp", [u])
     if name in ("log", "ln"):
@@ -480,25 +545,45 @@ def _derivative_of_func(name: str, u):
         return BinaryOpNode("/", NumberNode(1.0), u)
     if name == "sqrt":
         # 1/(2*sqrt(u))
-        return BinaryOpNode("/", NumberNode(1.0),
-                            BinaryOpNode("*", NumberNode(2.0), FunctionCallNode("sqrt", [u])))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            BinaryOpNode("*", NumberNode(2.0), FunctionCallNode("sqrt", [u])),
+        )
     if name == "cbrt":
         # 1/(3*u^(2/3))
-        return BinaryOpNode("/", NumberNode(1.0),
-                            BinaryOpNode("*", NumberNode(3.0),
-                                         BinaryOpNode("^", u, BinaryOpNode("/", NumberNode(2.0), NumberNode(3.0)))))
+        return BinaryOpNode(
+            "/",
+            NumberNode(1.0),
+            BinaryOpNode(
+                "*",
+                NumberNode(3.0),
+                BinaryOpNode(
+                    "^", u, BinaryOpNode("/", NumberNode(2.0), NumberNode(3.0))
+                ),
+            ),
+        )
     if name == "abs":
         # sign(u)
         return FunctionCallNode("sign", [u])
     if name == "sec":
         # sec(u)*tan(u)
-        return BinaryOpNode("*", FunctionCallNode("sec", [u]), FunctionCallNode("tan", [u]))
+        return BinaryOpNode(
+            "*", FunctionCallNode("sec", [u]), FunctionCallNode("tan", [u])
+        )
     if name == "csc":
         # -csc(u)*cot(u)
-        return UnaryOpNode("-", BinaryOpNode("*", FunctionCallNode("csc", [u]), FunctionCallNode("cot", [u])))
+        return UnaryOpNode(
+            "-",
+            BinaryOpNode(
+                "*", FunctionCallNode("csc", [u]), FunctionCallNode("cot", [u])
+            ),
+        )
     if name == "cot":
         # -csc^2(u)
-        return UnaryOpNode("-", BinaryOpNode("^", FunctionCallNode("csc", [u]), NumberNode(2.0)))
+        return UnaryOpNode(
+            "-", BinaryOpNode("^", FunctionCallNode("csc", [u]), NumberNode(2.0))
+        )
     raise ValueError(f"Cannot differentiate function '{name}'")
 
 
@@ -525,17 +610,15 @@ def _differentiate_node(node, var: str):
 
         if node.op == "*":
             # Product rule: f'g + fg'
-            return BinaryOpNode("+",
-                                BinaryOpNode("*", df, g),
-                                BinaryOpNode("*", f, dg))
+            return BinaryOpNode("+", BinaryOpNode("*", df, g), BinaryOpNode("*", f, dg))
 
         if node.op == "/":
             # Quotient rule: (f'g - fg') / g^2
-            return BinaryOpNode("/",
-                                BinaryOpNode("-",
-                                             BinaryOpNode("*", df, g),
-                                             BinaryOpNode("*", f, dg)),
-                                BinaryOpNode("^", g, NumberNode(2.0)))
+            return BinaryOpNode(
+                "/",
+                BinaryOpNode("-", BinaryOpNode("*", df, g), BinaryOpNode("*", f, dg)),
+                BinaryOpNode("^", g, NumberNode(2.0)),
+            )
 
         if node.op in ("^", "**"):
             # General power rule: d/dx [f^g] = f^g * (g' * ln(f) + g * f'/f)
@@ -543,26 +626,35 @@ def _differentiate_node(node, var: str):
             g_vars = _collect_variables(g)
             if var not in g_vars:
                 # f^n where n is constant: n * f^(n-1) * f'
-                return BinaryOpNode("*",
-                                    BinaryOpNode("*", g,
-                                                 BinaryOpNode("^", f,
-                                                              BinaryOpNode("-", g, NumberNode(1.0)))),
-                                    df)
+                return BinaryOpNode(
+                    "*",
+                    BinaryOpNode(
+                        "*",
+                        g,
+                        BinaryOpNode("^", f, BinaryOpNode("-", g, NumberNode(1.0))),
+                    ),
+                    df,
+                )
             else:
                 # General case: f^g * (g' * ln(f) + g * f'/f)
-                return BinaryOpNode("*",
-                                    BinaryOpNode("^", f, g),
-                                    BinaryOpNode("+",
-                                                 BinaryOpNode("*", dg, FunctionCallNode("ln", [f])),
-                                                 BinaryOpNode("*", g,
-                                                              BinaryOpNode("/", df, f))))
+                return BinaryOpNode(
+                    "*",
+                    BinaryOpNode("^", f, g),
+                    BinaryOpNode(
+                        "+",
+                        BinaryOpNode("*", dg, FunctionCallNode("ln", [f])),
+                        BinaryOpNode("*", g, BinaryOpNode("/", df, f)),
+                    ),
+                )
 
     if isinstance(node, FunctionCallNode):
         if node.name in ("diff", "integrate"):
             raise ValueError(f"Cannot nest '{node.name}' inside diff")
         # Chain rule: d/dx f(u) = f'(u) * u'
         if len(node.args) != 1:
-            raise ValueError(f"Cannot differentiate multi-argument function '{node.name}'")
+            raise ValueError(
+                f"Cannot differentiate multi-argument function '{node.name}'"
+            )
         u = node.args[0]
         du = _differentiate_node(u, var)
         fprime_u = _derivative_of_func(node.name, u)
@@ -594,30 +686,46 @@ def _simplify_node(node):
         # Constant folding
         if isinstance(left, NumberNode) and isinstance(right, NumberNode):
             try:
-                if node.op == "+": return NumberNode(left.value + right.value)
-                if node.op == "-": return NumberNode(left.value - right.value)
-                if node.op == "*": return NumberNode(left.value * right.value)
-                if node.op == "/" and right.value != 0: return NumberNode(left.value / right.value)
-                if node.op in ("^", "**"): return NumberNode(left.value ** right.value)
+                if node.op == "+":
+                    return NumberNode(left.value + right.value)
+                if node.op == "-":
+                    return NumberNode(left.value - right.value)
+                if node.op == "*":
+                    return NumberNode(left.value * right.value)
+                if node.op == "/" and right.value != 0:
+                    return NumberNode(left.value / right.value)
+                if node.op in ("^", "**"):
+                    return NumberNode(left.value**right.value)
             except Exception:
                 pass
 
         if node.op == "+":
-            if isinstance(left, NumberNode) and left.value == 0.0: return right
-            if isinstance(right, NumberNode) and right.value == 0.0: return left
+            if isinstance(left, NumberNode) and left.value == 0.0:
+                return right
+            if isinstance(right, NumberNode) and right.value == 0.0:
+                return left
         elif node.op == "-":
-            if isinstance(right, NumberNode) and right.value == 0.0: return left
+            if isinstance(right, NumberNode) and right.value == 0.0:
+                return left
         elif node.op == "*":
-            if isinstance(left, NumberNode) and left.value == 0.0: return NumberNode(0.0)
-            if isinstance(right, NumberNode) and right.value == 0.0: return NumberNode(0.0)
-            if isinstance(left, NumberNode) and left.value == 1.0: return right
-            if isinstance(right, NumberNode) and right.value == 1.0: return left
+            if isinstance(left, NumberNode) and left.value == 0.0:
+                return NumberNode(0.0)
+            if isinstance(right, NumberNode) and right.value == 0.0:
+                return NumberNode(0.0)
+            if isinstance(left, NumberNode) and left.value == 1.0:
+                return right
+            if isinstance(right, NumberNode) and right.value == 1.0:
+                return left
         elif node.op == "/":
-            if isinstance(left, NumberNode) and left.value == 0.0: return NumberNode(0.0)
-            if isinstance(right, NumberNode) and right.value == 1.0: return left
+            if isinstance(left, NumberNode) and left.value == 0.0:
+                return NumberNode(0.0)
+            if isinstance(right, NumberNode) and right.value == 1.0:
+                return left
         elif node.op in ("^", "**"):
-            if isinstance(right, NumberNode) and right.value == 0.0: return NumberNode(1.0)
-            if isinstance(right, NumberNode) and right.value == 1.0: return left
+            if isinstance(right, NumberNode) and right.value == 0.0:
+                return NumberNode(1.0)
+            if isinstance(right, NumberNode) and right.value == 1.0:
+                return left
 
         return BinaryOpNode(node.op, left, right)
 
@@ -640,7 +748,9 @@ def _transform_calculus(node):
         return UnaryOpNode(node.op, _transform_calculus(node.operand))
 
     if isinstance(node, BinaryOpNode):
-        return BinaryOpNode(node.op, _transform_calculus(node.left), _transform_calculus(node.right))
+        return BinaryOpNode(
+            node.op, _transform_calculus(node.left), _transform_calculus(node.right)
+        )
 
     if isinstance(node, FunctionCallNode):
         if node.name == "diff":
@@ -667,20 +777,26 @@ def _compile_node(node):
 
     if isinstance(node, NumberNode):
         val = node.value
+
         def _number(variables):
             return val
+
         return _number
 
     if isinstance(node, VariableNode):
         name = node.name
+
         def _variable(variables):
             return variables[name]
+
         return _variable
 
     if isinstance(node, UnaryOpNode):
         operand_fn = _compile_node(node.operand)
+
         def _negate(variables):
             return -operand_fn(variables)
+
         return _negate
 
     if isinstance(node, BinaryOpNode):
@@ -688,25 +804,35 @@ def _compile_node(node):
         right_fn = _compile_node(node.right)
         op = node.op
 
-        if op == '+':
+        if op == "+":
+
             def _add(variables):
                 return left_fn(variables) + right_fn(variables)
+
             return _add
-        elif op == '-':
+        elif op == "-":
+
             def _sub(variables):
                 return left_fn(variables) - right_fn(variables)
+
             return _sub
-        elif op == '*':
+        elif op == "*":
+
             def _mul(variables):
                 return left_fn(variables) * right_fn(variables)
+
             return _mul
-        elif op == '/':
+        elif op == "/":
+
             def _div(variables):
                 return left_fn(variables) / right_fn(variables)
+
             return _div
-        elif op in ('^', '**'):
+        elif op in ("^", "**"):
+
             def _pow(variables):
                 return left_fn(variables) ** right_fn(variables)
+
             return _pow
 
     if isinstance(node, FunctionCallNode):
@@ -715,6 +841,7 @@ def _compile_node(node):
             if len(node.args) != 1:
                 raise ValueError("integrate() takes exactly 1 argument")
             inner_fn = _compile_node(node.args[0])
+
             def _integrate(variables):
                 result = inner_fn(variables)
                 # Need array input for numerical integration
@@ -724,7 +851,12 @@ def _compile_node(node):
                 for key in sorted(variables.keys()):
                     val = variables[key]
                     if isinstance(val, np.ndarray) and len(val) == len(result):
-                        dx = np.diff(val, prepend=val[0] - (val[1] - val[0]) if len(val) > 1 else val[0])
+                        dx = np.diff(
+                            val,
+                            prepend=val[0] - (val[1] - val[0])
+                            if len(val) > 1
+                            else val[0],
+                        )
                         # Use actual spacing between points
                         dx = np.diff(val)
                         # Cumulative trapezoid: average adjacent values, multiply by dx
@@ -732,6 +864,7 @@ def _compile_node(node):
                         cumulative = np.concatenate([[0.0], np.cumsum(avg * dx)])
                         return cumulative
                 return result
+
             return _integrate
 
         np_func = _NUMPY_FUNCTIONS.get(node.name)
@@ -741,17 +874,23 @@ def _compile_node(node):
 
         if len(arg_fns) == 1:
             arg_fn = arg_fns[0]
+
             def _call1(variables):
                 return np_func(arg_fn(variables))
+
             return _call1
         elif len(arg_fns) == 2:
             arg_fn0, arg_fn1 = arg_fns
+
             def _call2(variables):
                 return np_func(arg_fn0(variables), arg_fn1(variables))
+
             return _call2
         else:
+
             def _calln(variables):
                 return np_func(*(fn(variables) for fn in arg_fns))
+
             return _calln
 
     raise ValueError(f"Unknown AST node type: {type(node)}")
@@ -760,6 +899,7 @@ def _compile_node(node):
 # ---------------------------------------------------------------------------
 # SymbolicFunction — public API (drop-in replacement for old sympy version)
 # ---------------------------------------------------------------------------
+
 
 class SymbolicFunction:
     def __init__(self, equation_str: str):
@@ -776,16 +916,18 @@ class SymbolicFunction:
             raise ValueError("Empty expression")
 
         expr_str = self.equation_str
-        self.output_var = 'y'
+        self.output_var = "y"
 
-        if '=' in expr_str:
-            parts = expr_str.split('=', 1)
+        if "=" in expr_str:
+            parts = expr_str.split(sep="=", maxsplit=1)
             lhs = parts[0].strip()
             expr_str = parts[1].strip()
             if len(lhs) == 1 and lhs.isalpha():
                 self.output_var = lhs
             else:
-                raise ValueError(f"Invalid output variable '{lhs}' — must be a single letter")
+                raise ValueError(
+                    f"Invalid output variable '{lhs}' — must be a single letter"
+                )
 
         ast = parse(expr_str)
 
