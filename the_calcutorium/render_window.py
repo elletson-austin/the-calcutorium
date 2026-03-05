@@ -22,7 +22,7 @@ class RenderWindow(QOpenGLWidget):
         self.input_state: InputState = InputState()
         self.ctx: moderngl.Context
         self.scene: Scene
-        self.screen: moderngl.Framebuffer
+        self.framebuffer: moderngl.Framebuffer
         self.renderer: Renderer
         self.mouse_hovering: bool = False
         self._manual_ranges: dict[str, tuple[float, float]] = {}
@@ -66,12 +66,12 @@ class RenderWindow(QOpenGLWidget):
         )
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self.renderer = Renderer(self.ctx)
-        self.screen = self.ctx.detect_framebuffer()
+        self.framebuffer = self.ctx.detect_framebuffer()
 
     def resizeGL(self, w: int, h: int) -> None:
         if self.ctx:
             self.ctx.viewport = (0, 0, w, h)
-            self.screen = self.ctx.detect_framebuffer()
+            self.framebuffer = self.ctx.detect_framebuffer()
 
     def _update_2d_rendering_params(
         self, width: int, height: int
@@ -104,7 +104,7 @@ class RenderWindow(QOpenGLWidget):
 
     def _compute_2d_dynamic_ranges(
         self, h_axis: str, v_axis: str, width: int, height: int
-    ) -> tuple[float, float]:
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
         """Compute dynamic horizontal and vertical ranges for 2D camera view.
         Returns a tuple (h_range, v_range) or (None, None) if not computable.
         """
@@ -112,7 +112,7 @@ class RenderWindow(QOpenGLWidget):
             return self._manual_ranges[h_axis], self._manual_ranges[v_axis]
 
         if height <= 0:
-            return None, None
+            return ((0, 0), (0, 0))
 
         cam2d = self.camera
         aspect = width / height
@@ -136,13 +136,13 @@ class RenderWindow(QOpenGLWidget):
 
     def paintGL(self) -> None:  # This is the corrected and single definition of paintGL
         self.makeCurrent()
-        if not all([self.ctx, self.scene, self.renderer, self.screen]):
+        if not all([self.ctx, self.scene, self.renderer, self.framebuffer]):
             return
 
-        self.screen.use()
+        self.framebuffer.use()
         self.update_camera(0.016)  # Assuming 60fps for now
 
-        self.screen.clear(0.0, 0.0, 0.0, 1.0)
+        self.framebuffer.clear(0.1, 0.1, 0.1, 1.0)
 
         width, height = self.width(), self.height()
         if width == 0 or height == 0:

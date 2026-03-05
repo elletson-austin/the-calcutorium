@@ -96,6 +96,9 @@ class CommandHandler:
                 distance=current_cam.distance,
             )
             self.render_window.set_camera(new_cam)
+            self.scene.objects = [
+                obj for obj in self.scene.objects if not isinstance(obj, Grid)
+            ]
             self.output_widget.write("Switched to 3D Mode")
             return
 
