@@ -149,7 +149,19 @@ class LinePlot(MathFunction):
         super().__init__(symbolic_func, RenderMode.LINE_STRIP, ProgramID.BASIC_3D, True, points)
         self.current_plane = None
         self.current_domain_range = None
-        self.update() # Initial vertex generation
+        self.reset_to_3d()  # Generate initial vertices using actual equation variables
+
+    def reset_to_3d(self, domain_range: tuple = (-10, 10)):
+        """Regenerate vertices for 3D display using the equation's actual variables."""
+        self.current_plane = None
+        self.current_domain_range = None
+        if self.symbolic_func.get_num_domain_vars() != 1:
+            self.vertices = np.array([], dtype=np.float32)
+            self.is_dirty = True
+            return
+        indep = str(self.symbolic_func.get_domain_vars()[0])
+        output = str(self.symbolic_func.get_output_var())
+        self._generate_line_vertices(domain_range, indep, output)
 
     def update(self, plane: str = 'xy', h_range: tuple = (-10, 10), v_range: tuple = (-10, 10)):
         if self.symbolic_func.get_num_domain_vars() != 1:
@@ -163,10 +175,16 @@ class LinePlot(MathFunction):
         plane_axis_map = {'xy': ('x', 'y', 'z'), 'xz': ('x', 'z', 'y'), 'yz': ('z', 'y', 'x')}
         h_axis, v_axis, const_axis = plane_axis_map.get(plane, ('x', 'y', 'z'))
 
+        # Hide if either variable is out-of-plane (belongs to the constant axis)
+        if indep_var_str == const_axis or output_var_str == const_axis:
+            self.vertices = np.array([], dtype=np.float32)
+            self.is_dirty = True
+            return
+
         if indep_var_str == h_axis:
-            plot_indep_axis, plot_output_axis, domain_range = h_axis, v_axis, h_range
+            domain_range = h_range
         elif indep_var_str == v_axis:
-            plot_indep_axis, plot_output_axis, domain_range = v_axis, h_axis, v_range
+            domain_range = v_range
         else:
             self.vertices = np.array([], dtype=np.float32)
             self.is_dirty = True
@@ -175,10 +193,10 @@ class LinePlot(MathFunction):
         if self.current_plane != plane or \
            self.current_domain_range is None or \
            not np.allclose(self.current_domain_range, domain_range, atol=1e-2):
-            
+
             self.current_plane = plane
             self.current_domain_range = domain_range
-            self._generate_line_vertices(domain_range, plot_indep_axis, plot_output_axis)
+            self._generate_line_vertices(domain_range, indep_var_str, output_var_str)
 
     def _generate_line_vertices(self, domain_range: tuple, indep_axis: str, output_axis: str):
         vertices = []

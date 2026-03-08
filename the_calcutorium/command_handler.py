@@ -99,6 +99,11 @@ class CommandHandler:
             self.scene.objects = [
                 obj for obj in self.scene.objects if not isinstance(obj, Grid)
             ]
+            # Restore 3D vertices for LinePlots hidden while in 2D mode
+            from .scene import LinePlot
+            for obj in self.scene.objects:
+                if isinstance(obj, LinePlot):
+                    obj.reset_to_3d()
             self.output_widget.write("Switched to 3D Mode")
             return
 
