@@ -1,5 +1,5 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
-from PySide6.QtCore import Qt, QObject, QEvent
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
 
 class TabKeyEventFilter(QObject):
@@ -15,25 +15,32 @@ class TabKeyEventFilter(QObject):
         return False
 
 
-def make_left_panel(input_widget, output_widget, fixed_width=300, bg_color="#2E2E2E"):
-    left_panel = QWidget()
-    left_panel.setFixedWidth(fixed_width)
-    left_panel.setStyleSheet(f"background-color: {bg_color};")
+def make_sidebar(functions_panel, simulations_panel, view_panel, output_widget, fixed_width=300):
+    """Build the left sidebar with a tab widget and output log at the bottom."""
+    sidebar = QWidget()
+    sidebar.setFixedWidth(fixed_width)
+    sidebar.setStyleSheet("background-color: #2E2E2E;")
 
-    left_layout = QVBoxLayout(left_panel)
-    left_layout.setContentsMargins(5, 5, 5, 5)
-    left_layout.setSpacing(5)
+    layout = QVBoxLayout(sidebar)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
 
-    scroll_area = QScrollArea()
-    scroll_area.setWidgetResizable(True)
-    scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    scroll_widget = QWidget()
-    function_editors_layout = QVBoxLayout(scroll_widget)
-    function_editors_layout.addStretch(1)
-    scroll_area.setWidget(scroll_widget)
+    tabs = QTabWidget()
+    tabs.setStyleSheet("""
+        QTabWidget::pane { border: 1px solid #555555; background-color: #2E2E2E; }
+        QTabBar::tab {
+            background-color: #3C3C3C; color: #AAAAAA;
+            padding: 6px 10px; border: 1px solid #555555;
+            border-bottom: none;
+        }
+        QTabBar::tab:selected { background-color: #2E2E2E; color: #F0F0F0; }
+        QTabBar::tab:hover { background-color: #4A4A4A; color: #F0F0F0; }
+    """)
+    tabs.addTab(functions_panel, "Functions")
+    tabs.addTab(simulations_panel, "Simulations")
+    tabs.addTab(view_panel, "View")
 
-    left_layout.addWidget(scroll_area, 1)
-    left_layout.addWidget(input_widget)
-    left_layout.addWidget(output_widget, 1)
+    layout.addWidget(tabs, 1)
+    layout.addWidget(output_widget)
 
-    return left_panel, function_editors_layout
+    return sidebar

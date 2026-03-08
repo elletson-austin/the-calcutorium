@@ -344,6 +344,50 @@ class CommandHandler:
                 f"Error adding function '{value_string}': {e}"
             )
 
+    def _remove_lorenz(self):
+        from .scene import LorenzAttractor
+        for obj in self.scene.objects:
+            if isinstance(obj, LorenzAttractor):
+                self.scene.objects.remove(obj)
+                self.update_function_editors_callback()
+                self.output_widget.write("Removed Lorenz Attractor.")
+                return
+        self.output_widget.write("No Lorenz Attractor in the scene.")
+
+    def _remove_nbody(self):
+        from .scene import NBody
+        for obj in self.scene.objects:
+            if isinstance(obj, NBody):
+                self.scene.objects.remove(obj)
+                self.update_function_editors_callback()
+                self.output_widget.write("Removed N-Body Simulation.")
+                return
+        self.output_widget.write("No N-Body Simulation in the scene.")
+
+    def update_lorenz_params(self, params: dict):
+        from .scene import LorenzAttractor
+        for obj in self.scene.objects:
+            if isinstance(obj, LorenzAttractor):
+                obj.uniforms.update(params)
+                ro = self.render_window.render_objects.get(obj)
+                if ro is not None:
+                    ro.compute_uniforms.update(params)
+                self.output_widget.write(f"Lorenz parameters updated.")
+                return
+        self.output_widget.write("No Lorenz Attractor in the scene.")
+
+    def update_nbody_params(self, params: dict):
+        from .scene import NBody
+        for obj in self.scene.objects:
+            if isinstance(obj, NBody):
+                obj.uniforms.update(params)
+                ro = self.render_window.render_objects.get(obj)
+                if ro is not None:
+                    ro.compute_uniforms.update(params)
+                self.output_widget.write(f"N-Body parameters updated.")
+                return
+        self.output_widget.write("No N-Body Simulation in the scene.")
+
     def _remove_command(self, command_parts: list[str]):
         from .scene import MathFunction  # Import here for type checking
 
