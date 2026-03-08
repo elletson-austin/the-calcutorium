@@ -1,4 +1,5 @@
 from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
 
@@ -8,7 +9,7 @@ class TabKeyEventFilter(QObject):
         self.render_widget = render_widget
 
     def eventFilter(self, watched: QObject, event: QEvent):
-        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Tab:
+        if event.type() == QEvent.Type.KeyPress and isinstance(event, QKeyEvent) and event.key() == Qt.Key.Key_Tab:
             if getattr(self.render_widget, "mouse_hovering", False):
                 self.render_widget.keyPressEvent(event)
                 return True

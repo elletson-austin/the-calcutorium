@@ -10,9 +10,9 @@ class FunctionEditorWidget(QWidget):
         super().__init__(parent)
         self.math_function = math_function
 
-        self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(5)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(5)
 
         self.equation_input = QLineEdit()
         self.equation_input.setText(self.math_function.equation_str)
@@ -26,8 +26,8 @@ class FunctionEditorWidget(QWidget):
         )
         remove_btn.clicked.connect(lambda: self.remove_requested.emit(self.math_function))
 
-        self.layout.addWidget(self.equation_input)
-        self.layout.addWidget(remove_btn)
+        row.addWidget(self.equation_input)
+        row.addWidget(remove_btn)
 
     def on_equation_changed(self):
         new_equation = self.equation_input.text()

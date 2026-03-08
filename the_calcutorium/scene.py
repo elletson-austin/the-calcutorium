@@ -4,7 +4,6 @@ import numpy as np
 
 from the_calcutorium.symbolic import SymbolicFunction
 
-
 class RenderMode(Enum):
     POINTS = auto()
     LINES = auto()
@@ -33,15 +32,15 @@ class SceneObject(ABC):
         self.ProgramID = ProgramID
         self.visibility = visibility # arbitrary visibility 
         self.is_2d = is_2d             # visibility determined by dimension
-        self.name = None
+        self.name: str | None = None
         self.vertices = np.array([], dtype=np.float32)
         self.is_dirty = True
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {'type': self.__class__.__name__}
 
     @abstractmethod
-    def update(self, **kwargs):
+    def update(self, *args, **kwargs):
         """Update scene object, e.g. for dynamic elements or LOD."""
         pass
 
@@ -52,24 +51,22 @@ class Scene:
 
     def add(self, obj: SceneObject):
         if obj in self.objects:
-            raise ValueError(f"SceneObject already exists")
+            raise ValueError("SceneObject already exists")
         self.objects.append(obj)
 
     def remove(self, obj: SceneObject):
         if obj not in self.objects:
-            raise ValueError(f"SceneObject doesn't exist")
+            raise ValueError("SceneObject doesn't exist")
         self.objects.remove(obj)
 
     def to_dict(self):
-        from .simulations import LorenzAttractor
-        # Don't save the axes, it's a default part of the scene
         return [obj.to_dict() for obj in self.objects if isinstance(obj, (MathFunction, LorenzAttractor))]
 
     def from_dict(self, scene_data):
         # Clear existing objects except axes
         self.objects = [obj for obj in self.objects if isinstance(obj, Axes)]
         for item_data in scene_data:
-            if item_data['type'] in ['LinePlot', 'SurfacePlot', 'MathFunction']: # Compatibility with old saves
+            if item_data['type'] in ['LinePlot', 'SurfacePlot', 'MathFunction']:
                 try:
                     symbolic_func = SymbolicFunction(item_data['equation'])
                     if symbolic_func.get_num_domain_vars() == 1:
@@ -77,17 +74,13 @@ class Scene:
                     elif symbolic_func.get_num_domain_vars() == 2:
                         new_func = SurfacePlot(symbolic_func)
                     else:
-                        continue # Skip functions that are not 1D or 2D
-                    
+                        continue
                     new_func.name = item_data['equation']
                     self.objects.append(new_func)
                 except ValueError:
-                    # Ignore functions that fail to parse
                     continue
 
             elif item_data['type'] == 'LorenzAttractor':
-                from .simulations import LorenzAttractor
-                # You might want to save/load parameters for this in the future
                 lorenz = LorenzAttractor()
                 lorenz.name = "Lorenz Attractor"
                 self.objects.append(lorenz)
@@ -140,7 +133,7 @@ class MathFunction(SceneObject, ABC):
             print(f"Error regenerating function: {e}")
 
     @abstractmethod
-    def update(self, **kwargs):
+    def update(self, *args, **kwargs):
         pass
 
 
@@ -205,7 +198,9 @@ class LinePlot(MathFunction):
         for val in domain_values:
             try:
                 out_val = self.symbolic_func.evaluate(val)
-                if out_val is None: continue
+                if out_val is None:
+                    continue
+                	
 
                 point = {'x': 0.0, 'y': 0.0, 'z': 0.0}
                 point[indep_axis] = val
@@ -240,7 +235,7 @@ class SurfacePlot(MathFunction):
 
         all_vars = {domain_var1_name, domain_var2_name, output_var_name}
         if len(all_vars) != 3 or not all_vars.issubset({'x', 'y', 'z'}):
-            raise ValueError(f"Surface plot must be of the form f(a,b)=c where a,b,c are unique x,y,z variables.")
+            raise ValueError("Surface plot must be of the form f(a,b)=c where a,b,c are unique x,y,z variables.")
         
         domain1_vals = np.linspace(domain1_range[0], domain1_range[1], self.points)
         domain2_vals = np.linspace(domain2_range[0], domain2_range[1], self.points)
@@ -362,28 +357,30 @@ class Grid(SceneObject):
             is_major = (abs(i) < 1e-6) or (abs(i % (self.spacing * self.major_interval)) < self.spacing * 0.1)
             color = major_color if is_major else minor_color
             
-            p1, p2 = [0, 0, 0], [0, 0, 0]
+            p1, p2 = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
             p1[h_idx], p2[h_idx] = self.h_range[0], self.h_range[1]
             p1[v_idx], p2[v_idx] = i, i
             
             vertices.extend(p1 + color + [is_major])
             vertices.extend(p2 + color + [is_major])
             
-            if is_major: self.labels['h_labels'].append((i, p1[h_idx], p2[h_idx], v_idx))
-        
+            if is_major:
+                self.labels['h_labels'].append((i, p1[h_idx], p2[h_idx], v_idx))
+
         # Lines along the vertical axis (parallel to v_axis)
         for i in np.arange(start_h, end_h + self.spacing * 0.1, self.spacing):
             is_major = (abs(i) < 1e-6) or (abs(i % (self.spacing * self.major_interval)) < self.spacing * 0.1)
             color = major_color if is_major else minor_color
 
-            p1, p2 = [0, 0, 0], [0, 0, 0]
+            p1, p2 = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
             p1[v_idx], p2[v_idx] = self.v_range[0], self.v_range[1]
             p1[h_idx], p2[h_idx] = i, i
-            
+
             vertices.extend(p1 + color + [is_major])
             vertices.extend(p2 + color + [is_major])
-            
-            if is_major: self.labels['v_labels'].append((i, p1[v_idx], p2[v_idx], h_idx))
+
+            if is_major:
+                self.labels['v_labels'].append((i, p1[v_idx], p2[v_idx], h_idx))
             
         return np.array(vertices, dtype=np.float32)
 
@@ -397,5 +394,6 @@ class Grid(SceneObject):
             self.is_dirty = True
 
 
-# Re-export so "from .scene import LorenzAttractor, NBody" still works
-from .simulations import LorenzAttractor, NBody
+# Re-export at bottom to avoid circular import (simulations.py imports from scene.py)
+from .simulations import LorenzAttractor as LorenzAttractor, NBody as NBody  # noqa: E402
+

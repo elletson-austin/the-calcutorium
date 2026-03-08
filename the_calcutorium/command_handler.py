@@ -1,7 +1,8 @@
 import shlex
 from typing import TYPE_CHECKING, Callable, Dict, List
 
-from .scene import Grid
+from .scene import Grid, LinePlot, MathFunction
+from .simulations import LorenzAttractor, NBody
 
 if TYPE_CHECKING:
     from .output_widget import OutputWidget
@@ -73,7 +74,7 @@ class CommandHandler:
         self.output_widget.write(help_message)
 
     def _clear_command(self, command_parts: list[str]):
-        from .scene import Axes, Grid
+        from .scene import Axes
 
         self.scene.objects = [
             obj for obj in self.scene.objects if isinstance(obj, (Axes, Grid))
@@ -100,7 +101,6 @@ class CommandHandler:
                 obj for obj in self.scene.objects if not isinstance(obj, Grid)
             ]
             # Restore 3D vertices for LinePlots hidden while in 2D mode
-            from .scene import LinePlot
             for obj in self.scene.objects:
                 if isinstance(obj, LinePlot):
                     obj.reset_to_3d()
@@ -287,8 +287,6 @@ class CommandHandler:
             return
 
     def _add_lorenz(self):
-        from .scene import LorenzAttractor
-
         for obj in self.scene.objects:
             if isinstance(obj, LorenzAttractor):
                 self.output_widget.write(
@@ -301,8 +299,6 @@ class CommandHandler:
         self.update_function_editors_callback()
 
     def _add_nbody(self):
-        from .scene import NBody
-
         for obj in self.scene.objects:
             if isinstance(obj, NBody):
                 self.output_widget.write(
@@ -315,7 +311,7 @@ class CommandHandler:
         self.update_function_editors_callback()
 
     def _add_func(self, value_string: str):
-        from .scene import LinePlot, MathFunction, SurfacePlot
+        from .scene import SurfacePlot
         from .symbolic import SymbolicFunction
 
         try:
@@ -350,7 +346,6 @@ class CommandHandler:
             )
 
     def _remove_lorenz(self):
-        from .scene import LorenzAttractor
         for obj in self.scene.objects:
             if isinstance(obj, LorenzAttractor):
                 self.scene.objects.remove(obj)
@@ -360,7 +355,6 @@ class CommandHandler:
         self.output_widget.write("No Lorenz Attractor in the scene.")
 
     def _remove_nbody(self):
-        from .scene import NBody
         for obj in self.scene.objects:
             if isinstance(obj, NBody):
                 self.scene.objects.remove(obj)
@@ -370,7 +364,6 @@ class CommandHandler:
         self.output_widget.write("No N-Body Simulation in the scene.")
 
     def update_lorenz_params(self, params: dict):
-        from .scene import LorenzAttractor
         for obj in self.scene.objects:
             if isinstance(obj, LorenzAttractor):
                 obj.uniforms.update(params)
@@ -382,7 +375,6 @@ class CommandHandler:
         self.output_widget.write("No Lorenz Attractor in the scene.")
 
     def update_nbody_params(self, params: dict):
-        from .scene import NBody
         for obj in self.scene.objects:
             if isinstance(obj, NBody):
                 obj.uniforms.update(params)
@@ -394,8 +386,6 @@ class CommandHandler:
         self.output_widget.write("No N-Body Simulation in the scene.")
 
     def _remove_command(self, command_parts: list[str]):
-        from .scene import MathFunction  # Import here for type checking
-
         if len(command_parts) < 2:
             self.output_widget.write_error(
                 "Invalid 'remove' command format. Expected: 'remove <type> \"<value>\"'. Type 'help' for available commands."

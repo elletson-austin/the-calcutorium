@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 class Renderer:
     
-    def __init__(self, ctx: moderngl.Context = None):
+    def __init__(self, ctx: moderngl.Context):
         self.ctx: moderngl.Context = ctx
         self.program_manager: ProgramManager = ProgramManager(self.ctx)
         self._adapters_by_program_id: dict[ProgramID, type[RenderAdapter]] = dict[ProgramID, type[RenderAdapter]](ADAPTERS_BY_PROGRAM_ID) 

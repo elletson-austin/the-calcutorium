@@ -1,6 +1,9 @@
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Tuple, TYPE_CHECKING
 
 from .scene import MathFunction
+
+if TYPE_CHECKING:
+    from .function_editor import FunctionEditorWidget
 
 
 def safe_regenerate(math_function: MathFunction, new_equation: str) -> Tuple[bool, str]:
@@ -19,10 +22,10 @@ def safe_regenerate(math_function: MathFunction, new_equation: str) -> Tuple[boo
         return False, str(e)
 
 
-def sync_function_editors(scene, 
-                          function_editors: Dict[MathFunction, object], 
-                          layout, 
-                          editor_factory: Callable[[MathFunction], object]):
+def sync_function_editors(scene,
+                          function_editors: Dict[MathFunction, "FunctionEditorWidget"],
+                          layout,
+                          editor_factory: Callable[[MathFunction], "FunctionEditorWidget"]):
     
     scene_funcs = [obj for obj in scene.objects if isinstance(obj, MathFunction)]
 

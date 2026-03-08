@@ -1,4 +1,3 @@
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -31,7 +30,9 @@ class MainWindow(QMainWindow):
         self.render_widget.set_scene(self.scene)
 
         self.event_filter = TabKeyEventFilter(self.render_widget)
-        QApplication.instance().installEventFilter(self.event_filter)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self.event_filter)
 
         self.function_editors = {}
 
