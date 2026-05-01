@@ -1,7 +1,4 @@
-from dataclasses import dataclass, field
-
 import numpy as np
-from PySide6.QtCore import Qt  # Keep Qt import for key definitions
 
 from .render_types import Projection, SnapMode
 
@@ -34,20 +31,6 @@ def _make_view_matrix(
     view[2, 3] = np.dot(forward, cam_pos)
 
     return view.T.flatten()
-
-
-@dataclass
-class InputState:  # Tracks the state of the input
-    mouse_pos: np.ndarray = field(
-        default_factory=lambda: np.array([0, 0], dtype=np.float32)
-    )
-    mouse_delta: np.ndarray = field(
-        default_factory=lambda: np.array([0, 0], dtype=np.float32)
-    )
-    keys_held: set = field(default_factory=set)
-    left_mouse_pressed: bool = False
-    right_mouse_pressed: bool = False
-    scroll_delta: float = 0.0
 
 
 class Camera3D:
@@ -120,22 +103,15 @@ class Camera3D:
         proj[2, 3] = -(far + near) / (far - near)
         return proj.T.flatten()
 
-    def update(self, input_state: InputState, dt: float, width: int, height: int):
-        # --- Mouse Rotation ---
-        if input_state.left_mouse_pressed:
-            self.rotation[0] += input_state.mouse_delta[1]  # Pitch
-            self.rotation[1] += input_state.mouse_delta[0]  # Yaw
-            self.rotation[0] = np.clip(self.rotation[0], -89.0, 89.0)
-            self.rotation[1] %= 360.0
+    def orbit(self, dyaw: float, dpitch: float) -> None:
+        self.rotation[0] = np.clip(self.rotation[0] + dpitch, -89.0, 89.0)
+        self.rotation[1] = (self.rotation[1] + dyaw) % 360.0
 
-        # --- Mouse Zoom ---
-        if abs(input_state.scroll_delta) > 0:
-            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1 / 1.1
-            self.distance = np.clip(self.distance * zoom_factor, 1.0, 500.0)
+    def zoom(self, factor: float) -> None:
+        self.distance = float(np.clip(self.distance * factor, 1.0, 500.0))
 
-        # --- Keyboard Movement (WASD) ---
-        keys = input_state.keys_held
-        move_speed = dt * 20.0
+    def move(self, forward_amt: float, right_amt: float) -> None:
+        """Translate the camera target on the ground plane by world-space amounts."""
         cam_pos = self.get_position()
         forward = self.position_center - cam_pos
         forward[1] = 0
@@ -144,14 +120,7 @@ class Camera3D:
         right = np.cross(forward, np.array([0, 1, 0], dtype=np.float32))
         right = _normalize(right)
 
-        if Qt.Key.Key_W in keys:
-            self.position_center += forward * move_speed
-        if Qt.Key.Key_S in keys:
-            self.position_center -= forward * move_speed
-        if Qt.Key.Key_A in keys:
-            self.position_center -= right * move_speed
-        if Qt.Key.Key_D in keys:
-            self.position_center += right * move_speed
+        self.position_center += forward * forward_amt + right * right_amt
 
 
 class Camera2D:
@@ -210,31 +179,21 @@ class Camera2D:
         proj[2, 3] = -(far + near) / (far - near)
         return proj.T.flatten()
 
-    def update(self, input_state: InputState, dt: float, width: int, height: int):
-        # --- Mouse Panning ---
-        if input_state.left_mouse_pressed and height > 0:
-            aspect_ratio = width / height
-            pan_speed_h = self.distance * aspect_ratio / width if width > 0 else 0
-            pan_speed_v = self.distance / height
-            self._pan(
-                input_state.mouse_delta[0],
-                input_state.mouse_delta[1],
-                pan_speed_h,
-                pan_speed_v,
-            )
-
-        # --- Mouse Zoom ---
-        if abs(input_state.scroll_delta) > 0:
-            zoom_factor = 1.1 if input_state.scroll_delta < 0 else 1 / 1.1
-            self.distance = np.clip(self.distance * zoom_factor, 1.0, 500.0)
-
-    def _pan(self, dx: float, dy: float, pan_speed_h: float, pan_speed_v: float):
+    def pan(self, dx_pixels: float, dy_pixels: float, width: int, height: int) -> None:
+        if width <= 0 or height <= 0:
+            return
+        aspect_ratio = width / height
+        pan_speed_h = self.distance * aspect_ratio / width
+        pan_speed_v = self.distance / height
         if self.snap_mode == SnapMode.XY:
-            self.position_center[0] -= dx * pan_speed_h
-            self.position_center[1] += dy * pan_speed_v
+            self.position_center[0] -= dx_pixels * pan_speed_h
+            self.position_center[1] += dy_pixels * pan_speed_v
         elif self.snap_mode == SnapMode.XZ:
-            self.position_center[0] -= dx * pan_speed_h
-            self.position_center[2] -= dy * pan_speed_v
+            self.position_center[0] -= dx_pixels * pan_speed_h
+            self.position_center[2] -= dy_pixels * pan_speed_v
         elif self.snap_mode == SnapMode.YZ:
-            self.position_center[2] -= dx * pan_speed_h
-            self.position_center[1] += dy * pan_speed_v
+            self.position_center[2] -= dx_pixels * pan_speed_h
+            self.position_center[1] += dy_pixels * pan_speed_v
+
+    def zoom(self, factor: float) -> None:
+        self.distance = float(np.clip(self.distance * factor, 1.0, 500.0))

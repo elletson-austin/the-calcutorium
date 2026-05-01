@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass, field
 from typing import Any
 
 import moderngl
@@ -7,11 +8,25 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
-from .camera import Camera2D, Camera3D, InputState
+from .camera import Camera2D, Camera3D
 from .overlay_labels import OverlayLabelRenderer
 from .render_types import AXIS_INDEX, Projection, plane_for_snap_mode, axes_for_plane
 from .renderer import Renderer
 from .scene import Grid, MathFunction, Scene, SceneObject
+
+
+@dataclass
+class InputState:
+    mouse_pos: np.ndarray = field(
+        default_factory=lambda: np.array([0, 0], dtype=np.float32)
+    )
+    mouse_delta: np.ndarray = field(
+        default_factory=lambda: np.array([0, 0], dtype=np.float32)
+    )
+    keys_held: set = field(default_factory=set)
+    left_mouse_pressed: bool = False
+    right_mouse_pressed: bool = False
+    scroll_delta: float = 0.0
 
 logger = logging.getLogger(__name__)
 
@@ -206,13 +221,35 @@ class RenderWindow(QOpenGLWidget):
         super().closeEvent(event)
 
     def update_camera(self, dt: float = 0.016) -> None:
-        if self.input_state.left_mouse_pressed or abs(self.input_state.scroll_delta) > 0:
+        state = self.input_state
+        if state.left_mouse_pressed or abs(state.scroll_delta) > 0:
             self.clear_manual_ranges()
 
-        self.camera.update(self.input_state, dt, self.width(), self.height())
+        if isinstance(self.camera, Camera3D):
+            if state.left_mouse_pressed:
+                self.camera.orbit(state.mouse_delta[0], state.mouse_delta[1])
+            if abs(state.scroll_delta) > 0:
+                self.camera.zoom(1.1 if state.scroll_delta < 0 else 1 / 1.1)
 
-        self.input_state.mouse_delta[:] = 0
-        self.input_state.scroll_delta = 0
+            keys = state.keys_held
+            move_speed = dt * 20.0
+            forward_amt = (Qt.Key.Key_W in keys) - (Qt.Key.Key_S in keys)
+            right_amt = (Qt.Key.Key_D in keys) - (Qt.Key.Key_A in keys)
+            if forward_amt or right_amt:
+                self.camera.move(forward_amt * move_speed, right_amt * move_speed)
+        elif isinstance(self.camera, Camera2D):
+            if state.left_mouse_pressed:
+                self.camera.pan(
+                    state.mouse_delta[0],
+                    state.mouse_delta[1],
+                    self.width(),
+                    self.height(),
+                )
+            if abs(state.scroll_delta) > 0:
+                self.camera.zoom(1.1 if state.scroll_delta < 0 else 1 / 1.1)
+
+        state.mouse_delta[:] = 0
+        state.scroll_delta = 0
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
