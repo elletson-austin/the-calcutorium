@@ -1,64 +1,69 @@
 import numpy as np
 
-from .scene import SceneObject, RenderMode, ProgramID
+from .scene import ProgramID, RenderMode, SceneObject
 
 
 class LorenzAttractor(SceneObject):
-    def __init__(self, 
-                num_points: int = 100_000, 
-                sigma: float = 10.0, 
-                rho: float = 28.0, 
-                beta: float = 8.0 / 3.0, 
-                dt: float = 0.001, 
-                steps: int = 5):
-        
-        super().__init__(RenderMode=RenderMode.POINTS, ProgramID=ProgramID.LORENZ_ATTRACTOR, dynamic=True)
+    def __init__(
+        self,
+        num_points: int = 100_000,
+        sigma: float = 10.0,
+        rho: float = 28.0,
+        beta: float = 8.0 / 3.0,
+        dt: float = 0.001,
+        steps: int = 5,
+    ):
+        super().__init__(
+            render_mode=RenderMode.POINTS,
+            program_id=ProgramID.LORENZ_ATTRACTOR,
+            dynamic=True,
+        )
         self.uniforms: dict = {
-            'sigma': sigma,
-            'rho': rho,
-            'beta': beta,
-            'dt': dt,
-            'steps': steps}
+            "sigma": sigma,
+            "rho": rho,
+            "beta": beta,
+            "dt": dt,
+            "steps": steps,
+        }
         self.num_points = num_points
         self.vertices = self.create_initial_points(num_points=num_points)
 
-    def to_dict(self):
-        d = super().to_dict()
-        d['uniforms'] = self.uniforms
-        return d
-
     def create_initial_points(self, num_points: int) -> np.ndarray:
-        return np.random.randn(num_points, 3).astype(np.float32)*8.0
-
+        p = np.random.randn(num_points, 4).astype(np.float32)
+        p[:, :3] *= 8.0
+        p[:, 3] = 1.0
+        return p
 
     def update(self, **kwargs):
-        pass # Handled by the compute shader in the renderer
-        
+        pass  # Handled by the compute shader in the renderer
+
 
 class NBody(SceneObject):
-    def __init__(self, 
-                num_bodies: int = 4000, 
-                dt: float = 0.01, 
-                G: float = 1.0, 
-                softening: float = 1.0, 
-                steps: int = 5):
-        super().__init__(RenderMode=RenderMode.POINTS, ProgramID=ProgramID.NBODY, dynamic=True)
+    def __init__(
+        self,
+        num_bodies: int = 4000,
+        dt: float = 0.01,
+        G: float = 1.0,
+        softening: float = 1.0,
+        steps: int = 5,
+    ):
+        super().__init__(
+            render_mode=RenderMode.POINTS,
+            program_id=ProgramID.NBODY,
+            dynamic=True,
+        )
         self.num_bodies = num_bodies
         self.uniforms: dict = {
-            'dt': dt,
-            'G': G,
-            'softening': softening,
-            'num_bodies': num_bodies,
-            'steps': steps}
+            "dt": dt,
+            "G": G,
+            "softening": softening,
+            "num_bodies": num_bodies,
+            "steps": steps,
+        }
         self.positions = self._create_initial_positions(num_bodies)
         self.velocities = self._create_initial_velocities(num_bodies)
         self.masses = self._create_initial_masses(num_bodies)
         self.vertices = self.positions.flatten()
-
-    def to_dict(self):
-        d = super().to_dict()
-        d['uniforms'] = self.uniforms
-        return d
 
     def _create_initial_positions(self, n: int) -> np.ndarray:
         p = np.random.randn(n, 4).astype(np.float32)
@@ -75,5 +80,4 @@ class NBody(SceneObject):
         return (np.abs(np.random.randn(n)) * 1.0).astype(np.float32)
 
     def update(self, **kwargs):
-        pass # Handled by the compute shader in the renderer
-        
+        pass  # Handled by the compute shader in the renderer

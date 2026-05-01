@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QFont, QColor
 
 from .scene import SceneObject, MathFunction, Grid
-from .render_types import SnapMode
+from .render_types import axes_for_plane, plane_for_snap_mode
 
 if TYPE_CHECKING:
     from .render_window import RenderWindow
@@ -24,13 +24,9 @@ class OverlayLabelRenderer:
         return painter
 
     def _get_2d_plane_components(self):
-        cam2d = self._rw.camera
-        axis_components = {
-            SnapMode.XY: ("x", "y"),
-            SnapMode.XZ: ("x", "z"),
-            SnapMode.YZ: ("z", "y"),
-        }
-        return axis_components.get(cam2d.snap_mode, ("x", "y"))
+        plane = plane_for_snap_mode(self._rw.camera.snap_mode) or "xy"
+        axes = axes_for_plane(plane) or ("x", "y", "z")
+        return axes[0], axes[1]
 
     def _compute_view_scaling(self, h_range, v_range, width: int, height: int):
         h_diff = h_range[1] - h_range[0]
@@ -100,7 +96,7 @@ class OverlayLabelRenderer:
 
                 if 0 <= screen_x < width:
                     label_text = f"{h_val:.1f}"
-                    painter.drawText(screen_x - 15, screen_y, 30, 20, Qt.AlignCenter, label_text)
+                    painter.drawText(screen_x - 15, screen_y, 30, 20, Qt.AlignmentFlag.AlignCenter, label_text)
 
         # Draw vertical axis numeric labels (left)
         if "v_labels" in labels:
@@ -110,11 +106,11 @@ class OverlayLabelRenderer:
 
                 if 0 <= screen_y < height:
                     label_text = f"{v_val:.1f}"
-                    painter.drawText(screen_x, screen_y - 10, 35, 20, Qt.AlignCenter, label_text)
+                    painter.drawText(screen_x, screen_y - 10, 35, 20, Qt.AlignmentFlag.AlignCenter, label_text)
 
         painter.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        painter.drawText(width - 40, height - 25, 30, 20, Qt.AlignCenter, h_axis_name)
-        painter.drawText(5, 5, 30, 20, Qt.AlignCenter, v_axis_name)
+        painter.drawText(width - 40, height - 25, 30, 20, Qt.AlignmentFlag.AlignCenter, h_axis_name)
+        painter.drawText(5, 5, 30, 20, Qt.AlignmentFlag.AlignCenter, v_axis_name)
 
         painter.end()
 
@@ -156,7 +152,7 @@ class OverlayLabelRenderer:
             if not label_text:
                 continue
 
-            painter.drawText(screen_x, screen_y - 10, 120, 20, Qt.AlignLeft | Qt.AlignVCenter, label_text)
+            painter.drawText(screen_x, screen_y - 10, 120, 20, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label_text)
 
         painter.end()
 
@@ -196,6 +192,6 @@ class OverlayLabelRenderer:
             screen_x += 6
             screen_y -= 6
 
-            painter.drawText(screen_x, screen_y - 10, 140, 20, Qt.AlignLeft | Qt.AlignVCenter, label_text)
+            painter.drawText(screen_x, screen_y - 10, 140, 20, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label_text)
 
         painter.end()

@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from typing import Protocol, TYPE_CHECKING, Any
+from typing import Any, Protocol, TYPE_CHECKING
 
-from .scene import SceneObject, ProgramID
 from .render_object import RenderObject
+from .scene import ProgramID, SceneObject
 
 if TYPE_CHECKING:
     from .renderer import Renderer
 else:
     Renderer = Any
+
+
 class RenderAdapter(Protocol):
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject: ...
     def update(self, renderer: Renderer, ro: RenderObject, obj: SceneObject) -> None: ...
@@ -18,14 +20,14 @@ class DefaultAdapter(RenderAdapter):
     """Default adapter for objects with obj.vertices and basic_3d shader inputs."""
 
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
-        program = renderer.program_manager.build_program(obj.ProgramID)
+        program = renderer.program_manager.build_program(obj.program_id)
         ssbo = renderer._create_buffer(obj.vertices.tobytes())
         vao = renderer.ctx.vertex_array(program, [(ssbo, "3f 3f", "in_position", "in_color")])
         return RenderObject(
-            program_id=obj.ProgramID,
+            program_id=obj.program_id,
             vao=vao,
             ssbo=ssbo,
-            Rendermode=obj.RenderMode,
+            render_mode=obj.render_mode,
             num_vertexes=len(obj.vertices) // 6,
         )
 
@@ -39,14 +41,16 @@ class DefaultAdapter(RenderAdapter):
 @dataclass(frozen=True)
 class SurfaceAdapter(RenderAdapter):
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
-        program = renderer.program_manager.build_program(obj.ProgramID)
+        program = renderer.program_manager.build_program(obj.program_id)
         ssbo = renderer._create_buffer(obj.vertices.tobytes())
-        vao = renderer.ctx.vertex_array(program, [(ssbo, "3f 3f 3f", "in_position", "in_normal", "in_color")])
+        vao = renderer.ctx.vertex_array(
+            program, [(ssbo, "3f 3f 3f", "in_position", "in_normal", "in_color")]
+        )
         return RenderObject(
-            program_id=obj.ProgramID,
+            program_id=obj.program_id,
             vao=vao,
             ssbo=ssbo,
-            Rendermode=obj.RenderMode,
+            render_mode=obj.render_mode,
             num_vertexes=len(obj.vertices) // 9,
         )
 
@@ -60,14 +64,16 @@ class SurfaceAdapter(RenderAdapter):
 @dataclass(frozen=True)
 class GridAdapter(RenderAdapter):
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
-        program = renderer.program_manager.build_program(obj.ProgramID)
+        program = renderer.program_manager.build_program(obj.program_id)
         ssbo = renderer._create_buffer(obj.vertices.tobytes())
-        vao = renderer.ctx.vertex_array(program, [(ssbo, "3f 3f 1f", "in_position", "in_color", "in_is_major")])
+        vao = renderer.ctx.vertex_array(
+            program, [(ssbo, "3f 3f 1f", "in_position", "in_color", "in_is_major")]
+        )
         return RenderObject(
-            program_id=obj.ProgramID,
+            program_id=obj.program_id,
             vao=vao,
             ssbo=ssbo,
-            Rendermode=obj.RenderMode,
+            render_mode=obj.render_mode,
             num_vertexes=len(obj.vertices) // 7,
         )
 
@@ -81,19 +87,19 @@ class GridAdapter(RenderAdapter):
 @dataclass(frozen=True)
 class LorenzAdapter(RenderAdapter):
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
-        program = renderer.program_manager.build_program(obj.ProgramID)
+        program = renderer.program_manager.build_program(obj.program_id)
         ssbo = renderer._create_buffer(obj.vertices.tobytes(), dynamic=True)
         vao = renderer.ctx.vertex_array(program, [(ssbo, "4f", "in_position")])
-        compute_shader = renderer.program_manager.build_compute_shader(obj.ProgramID)
+        compute_shader = renderer.program_manager.build_compute_shader(obj.program_id)
 
         return RenderObject(
-            program_id=obj.ProgramID,
+            program_id=obj.program_id,
             vao=vao,
             ssbo=ssbo,
-            Rendermode=obj.RenderMode,
+            render_mode=obj.render_mode,
             num_vertexes=getattr(obj, "num_points", obj.vertices.shape[0]),
             compute_shader=compute_shader,
-            compute_uniforms=getattr(obj, "uniforms", {}),
+            compute_uniforms=dict(getattr(obj, "uniforms", {})),
             storage_buffers=[(ssbo, 0)],
             compute_local_size_x=256,
         )
@@ -108,23 +114,23 @@ class LorenzAdapter(RenderAdapter):
 @dataclass(frozen=True)
 class NBodyAdapter(RenderAdapter):
     def create(self, renderer: Renderer, obj: SceneObject) -> RenderObject:
-        program = renderer.program_manager.build_program(obj.ProgramID)
+        program = renderer.program_manager.build_program(obj.program_id)
 
         pos_ssbo = renderer._create_buffer(obj.positions.tobytes(), dynamic=True)
         vel_ssbo = renderer._create_buffer(obj.velocities.tobytes(), dynamic=True)
         mass_ssbo = renderer._create_buffer(obj.masses.tobytes(), dynamic=True)
 
         vao = renderer.ctx.vertex_array(program, [(pos_ssbo, "4f", "in_position")])
-        compute_shader = renderer.program_manager.build_compute_shader(obj.ProgramID)
+        compute_shader = renderer.program_manager.build_compute_shader(obj.program_id)
 
         ro = RenderObject(
-            program_id=obj.ProgramID,
+            program_id=obj.program_id,
             vao=vao,
             ssbo=pos_ssbo,
-            Rendermode=obj.RenderMode,
+            render_mode=obj.render_mode,
             num_vertexes=getattr(obj, "num_bodies", obj.positions.shape[0]),
             compute_shader=compute_shader,
-            compute_uniforms=getattr(obj, "uniforms", {}),
+            compute_uniforms=dict(getattr(obj, "uniforms", {})),
             storage_buffers=[(pos_ssbo, 0), (vel_ssbo, 1), (mass_ssbo, 2)],
             compute_local_size_x=256,
         )
@@ -151,4 +157,3 @@ ADAPTERS_BY_PROGRAM_ID: dict[ProgramID, type[RenderAdapter]] = {
     ProgramID.NBODY: NBodyAdapter,
     ProgramID.BASIC_3D: DefaultAdapter,
 }
-

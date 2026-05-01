@@ -176,16 +176,12 @@ def _insert_implicit_multiply(tokens: list[Token]) -> list[Token]:
     for tok in tokens:
         if tok.type == TokenType.PIPE:
             is_opening = pipe_count % 2 == 0
-            if not is_opening:
-                pass
             prev_can_end = (result and result[-1].type in can_end) or (
                 result and result[-1].type == TokenType.PIPE and pipe_count % 2 == 0
             )
             if is_opening and prev_can_end:
                 # e.g. "2|x|" → "2 * |x|", "|x||y|" → "|x| * |y|"
                 result.append(Token(TokenType.MULTIPLY, "*", tok.pos))
-            if not is_opening and False:
-                pass  # closing pipe handled below
             pipe_count += 1
             result.append(tok)
             continue
@@ -851,15 +847,7 @@ def _compile_node(node):
                 for key in sorted(variables.keys()):
                     val = variables[key]
                     if isinstance(val, np.ndarray) and len(val) == len(result):
-                        dx = np.diff(
-                            val,
-                            prepend=val[0] - (val[1] - val[0])
-                            if len(val) > 1
-                            else val[0],
-                        )
-                        # Use actual spacing between points
                         dx = np.diff(val)
-                        # Cumulative trapezoid: average adjacent values, multiply by dx
                         avg = (result[:-1] + result[1:]) / 2.0
                         cumulative = np.concatenate([[0.0], np.cumsum(avg * dx)])
                         return cumulative

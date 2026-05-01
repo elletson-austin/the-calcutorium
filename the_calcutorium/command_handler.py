@@ -1,8 +1,10 @@
 import shlex
 from typing import TYPE_CHECKING, Callable, Dict, List
 
-from .scene import Grid, LinePlot, MathFunction
+from .render_types import AXIS_INDEX, SnapMode, axes_for_plane
+from .scene import Axes, Grid, LinePlot, MathFunction, SurfacePlot
 from .simulations import LorenzAttractor, NBody
+from .symbolic import SymbolicFunction
 
 if TYPE_CHECKING:
     from .output_widget import OutputWidget
@@ -21,9 +23,7 @@ class CommandHandler:
         self.scene = scene
         self.render_window = render_window
         self.output_widget = output_widget
-        self.update_function_editors_callback = (
-            update_function_editors_callback  # Callback to update UI in MainWindow
-        )
+        self.update_function_editors_callback = update_function_editors_callback
 
         self.commands: Dict[str, Callable[[List[str]], None]] = {
             "help": self._help_command,
@@ -33,6 +33,37 @@ class CommandHandler:
             "add": self._add_command,
             "remove": self._remove_command,
         }
+
+    # ---- public command API used by panels / other widgets ----
+
+    def add_function(self, equation: str) -> None:
+        self._add_func(equation)
+
+    def add_lorenz(self) -> None:
+        self._add_lorenz()
+
+    def remove_lorenz(self) -> None:
+        self._remove_lorenz()
+
+    def add_nbody(self) -> None:
+        self._add_nbody()
+
+    def remove_nbody(self) -> None:
+        self._remove_nbody()
+
+    def switch_to_3d(self) -> None:
+        self._view_command(["view", "3d"])
+
+    def switch_to_2d(self, plane: str) -> None:
+        self._view_2d(plane, self.render_window.camera)
+
+    def set_range(self, axis: str, min_val: float, max_val: float) -> None:
+        self._range_command(["range", axis, str(min_val), str(max_val)])
+
+    def reset_range(self) -> None:
+        self._range_command(["range", "auto"])
+
+    # ---- text command entry point ----
 
     def handle_command(self, command: str):
         self.output_widget.write(f"Command received: {command}")
@@ -53,9 +84,7 @@ class CommandHandler:
             try:
                 handler(command_parts)
             except Exception as e:
-                self.output_widget.write_error(
-                    f"Error executing command '{command_name}': {e}"
-                )
+                self.output_widget.write_error(f"Error executing command '{command_name}': {e}")
         else:
             self.output_widget.write(
                 f"Unknown or invalid command: '{command}'. Type 'help' for available commands."
@@ -74,8 +103,6 @@ class CommandHandler:
         self.output_widget.write(help_message)
 
     def _clear_command(self, command_parts: list[str]):
-        from .scene import Axes
-
         self.scene.objects = [
             obj for obj in self.scene.objects if isinstance(obj, (Axes, Grid))
         ]
@@ -100,7 +127,6 @@ class CommandHandler:
             self.scene.objects = [
                 obj for obj in self.scene.objects if not isinstance(obj, Grid)
             ]
-            # Restore 3D vertices for LinePlots hidden while in 2D mode
             for obj in self.scene.objects:
                 if isinstance(obj, LinePlot):
                     obj.reset_to_3d()
@@ -119,15 +145,12 @@ class CommandHandler:
 
     def _view_2d(self, plane: str, current_cam):
         from .camera import Camera2D
-        from .render_types import SnapMode
 
         snap_map = {"xy": SnapMode.XY, "xz": SnapMode.XZ, "yz": SnapMode.YZ}
         snap_mode = snap_map.get(plane)
 
-        if not snap_mode:
-            self.output_widget.write_error(
-                f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'."
-            )
+        if snap_mode is None:
+            self.output_widget.write_error(f"Invalid plane '{plane}'. Use 'xy', 'xz', or 'yz'.")
             return
 
         if isinstance(current_cam, Camera2D) and current_cam.snap_mode == snap_mode:
@@ -141,16 +164,13 @@ class CommandHandler:
         )
         self.render_window.set_camera(new_cam)
 
-        self.scene.objects = [
-            obj for obj in self.scene.objects if not isinstance(obj, Grid)
-        ]
-        self.scene.objects.append(Grid(plane=plane))
+        self.scene.objects = [obj for obj in self.scene.objects if not isinstance(obj, Grid)]
+        self.scene.add(Grid(plane=plane))
 
         self.output_widget.write(f"Switched to 2D Mode ({plane.upper()} Plane)")
 
     def _range_command(self, command_parts: list[str]):
         from .camera import Camera2D
-        from .render_types import SnapMode
 
         if not isinstance(self.render_window.camera, Camera2D):
             self.output_widget.write_error(
@@ -170,24 +190,18 @@ class CommandHandler:
             return
 
         axis_str = command_parts[1].lower()
-        if axis_str not in ["x", "y", "z"]:
-            self.output_widget.write_error(
-                f"Invalid axis '{axis_str}'. Use 'x', 'y', or 'z'."
-            )
+        if axis_str not in ("x", "y", "z"):
+            self.output_widget.write_error(f"Invalid axis '{axis_str}'. Use 'x', 'y', or 'z'.")
             return
 
         try:
             min_val, max_val = float(command_parts[2]), float(command_parts[3])
         except ValueError:
-            self.output_widget.write_error(
-                "Invalid range values. Min and max must be numbers."
-            )
+            self.output_widget.write_error("Invalid range values. Min and max must be numbers.")
             return
 
         if min_val >= max_val:
-            self.output_widget.write_error(
-                "Min range value must be less than max value."
-            )
+            self.output_widget.write_error("Min range value must be less than max value.")
             return
 
         self.render_window.set_manual_range(axis_str, min_val, max_val)
@@ -195,23 +209,13 @@ class CommandHandler:
             f"Set manual range for {axis_str}-axis to ({min_val}, {max_val})."
         )
 
-        # Adjust camera center and distance if both relevant ranges are now manually set
-        current_snap_mode = self.render_window.camera.snap_mode
-        h_axis, v_axis = None, None
+        # Adjust camera if both in-plane ranges are now manually set.
+        plane_axes = axes_for_plane(_plane_for_camera(self.render_window.camera))
+        if plane_axes is None:
+            return
+        h_axis, v_axis, _ = plane_axes
 
-        if current_snap_mode == SnapMode.XY:
-            h_axis, v_axis = "x", "y"
-        elif current_snap_mode == SnapMode.XZ:
-            h_axis, v_axis = "x", "z"
-        elif current_snap_mode == SnapMode.YZ:
-            h_axis, v_axis = "z", "y"  # Z is horizontal, Y is vertical
-
-        if (
-            h_axis
-            and v_axis
-            and self.render_window.has_manual_range(h_axis)
-            and self.render_window.has_manual_range(v_axis)
-        ):
+        if self.render_window.has_manual_range(h_axis) and self.render_window.has_manual_range(v_axis):
             self._adjust_camera_for_manual_ranges(h_axis, v_axis)
 
     def _adjust_camera_for_manual_ranges(self, h_axis: str, v_axis: str):
@@ -219,14 +223,8 @@ class CommandHandler:
         h_range = manual_ranges[h_axis]
         v_range = manual_ranges[v_axis]
 
-        # Update camera center
-        axis_map = {"x": 0, "y": 1, "z": 2}
-        self.render_window.camera.position_center[axis_map[h_axis]] = (
-            h_range[0] + h_range[1]
-        ) / 2
-        self.render_window.camera.position_center[axis_map[v_axis]] = (
-            v_range[0] + v_range[1]
-        ) / 2
+        self.render_window.camera.position_center[AXIS_INDEX[h_axis]] = (h_range[0] + h_range[1]) / 2
+        self.render_window.camera.position_center[AXIS_INDEX[v_axis]] = (v_range[0] + v_range[1]) / 2
 
         range_width = h_range[1] - h_range[0]
         range_height = v_range[1] - v_range[0]
@@ -247,12 +245,9 @@ class CommandHandler:
             return
         window_aspect = width / height
 
-        # Adjust camera distance to fit the range within the window, maintaining chosen aspect
         if window_aspect > range_aspect:
-            # Window is wider than the desired range, fit to height
             self.render_window.camera.distance = range_height
         else:
-            # Window is taller or equal aspect, fit to width
             self.render_window.camera.distance = range_width / window_aspect
 
         self.output_widget.write(
@@ -260,7 +255,6 @@ class CommandHandler:
         )
 
     def _add_command(self, command_parts: list[str]):
-
         if len(command_parts) < 2:
             self.output_widget.write_error(
                 "Invalid 'add' command format. Expected: 'add <type> ...'. Type 'help' for available commands."
@@ -282,45 +276,49 @@ class CommandHandler:
                     "Invalid 'add func' command. Expected: add func \"<value>\"."
                 )
                 return
-            value_string = command_parts[2]
-            self._add_func(value_string)
+            self._add_func(command_parts[2])
             return
 
-    def _add_lorenz(self):
+    def _add_singleton_simulation(self, sim_cls, label: str):
         for obj in self.scene.objects:
-            if isinstance(obj, LorenzAttractor):
-                self.output_widget.write(
-                    "Lorenz attractor already exists in the scene."
-                )
+            if isinstance(obj, sim_cls):
+                self.output_widget.write(f"{label} already exists in the scene.")
                 return
-        lorenz = LorenzAttractor()
-        self.scene.objects.append(lorenz)
-        self.output_widget.write("Added Lorenz Attractor.")
+        self.scene.add(sim_cls())
+        self.output_widget.write(f"Added {label}.")
         self.update_function_editors_callback()
+
+    def _remove_singleton_simulation(self, sim_cls, label: str):
+        for obj in self.scene.objects:
+            if isinstance(obj, sim_cls):
+                self.scene.remove(obj)
+                self.update_function_editors_callback()
+                self.output_widget.write(f"Removed {label}.")
+                return
+        self.output_widget.write(f"No {label} in the scene.")
+
+    def _update_simulation_uniforms(self, sim_cls, label: str, params: dict):
+        for obj in self.scene.objects:
+            if isinstance(obj, sim_cls):
+                obj.uniforms.update(params)
+                ro = self.render_window.render_objects.get(obj)
+                if ro is not None:
+                    ro.compute_uniforms.update(params)
+                self.output_widget.write(f"{label} parameters updated.")
+                return
+        self.output_widget.write(f"No {label} in the scene.")
+
+    def _add_lorenz(self):
+        self._add_singleton_simulation(LorenzAttractor, "Lorenz Attractor")
 
     def _add_nbody(self):
-        for obj in self.scene.objects:
-            if isinstance(obj, NBody):
-                self.output_widget.write(
-                    "N-body simulation already exists in the scene."
-                )
-                return
-        nbody = NBody()
-        self.scene.objects.append(nbody)
-        self.output_widget.write("Added N-Body Simulation.")
-        self.update_function_editors_callback()
+        self._add_singleton_simulation(NBody, "N-Body Simulation")
 
     def _add_func(self, value_string: str):
-        from .scene import SurfacePlot
-        from .symbolic import SymbolicFunction
-
         try:
-            # Check if a function with this equation string already exists
             for obj in self.scene.objects:
                 if isinstance(obj, MathFunction) and obj.equation_str == value_string:
-                    self.output_widget.write(
-                        f"Function '{value_string}' already exists in the scene."
-                    )
+                    self.output_widget.write(f"Function '{value_string}' already exists in the scene.")
                     return
 
             symbolic_func = SymbolicFunction(value_string)
@@ -336,54 +334,24 @@ class CommandHandler:
                 )
                 return
 
-            new_func.name = value_string  # Assign name for identification
-            self.scene.objects.append(new_func)
+            new_func.name = value_string
+            self.scene.add(new_func)
             self.update_function_editors_callback()
             self.output_widget.write(f"Added function: {value_string}")
         except ValueError as e:
-            self.output_widget.write_error(
-                f"Error adding function '{value_string}': {e}"
-            )
+            self.output_widget.write_error(f"Error adding function '{value_string}': {e}")
 
     def _remove_lorenz(self):
-        for obj in self.scene.objects:
-            if isinstance(obj, LorenzAttractor):
-                self.scene.objects.remove(obj)
-                self.update_function_editors_callback()
-                self.output_widget.write("Removed Lorenz Attractor.")
-                return
-        self.output_widget.write("No Lorenz Attractor in the scene.")
+        self._remove_singleton_simulation(LorenzAttractor, "Lorenz Attractor")
 
     def _remove_nbody(self):
-        for obj in self.scene.objects:
-            if isinstance(obj, NBody):
-                self.scene.objects.remove(obj)
-                self.update_function_editors_callback()
-                self.output_widget.write("Removed N-Body Simulation.")
-                return
-        self.output_widget.write("No N-Body Simulation in the scene.")
+        self._remove_singleton_simulation(NBody, "N-Body Simulation")
 
     def update_lorenz_params(self, params: dict):
-        for obj in self.scene.objects:
-            if isinstance(obj, LorenzAttractor):
-                obj.uniforms.update(params)
-                ro = self.render_window.render_objects.get(obj)
-                if ro is not None:
-                    ro.compute_uniforms.update(params)
-                self.output_widget.write(f"Lorenz parameters updated.")
-                return
-        self.output_widget.write("No Lorenz Attractor in the scene.")
+        self._update_simulation_uniforms(LorenzAttractor, "Lorenz", params)
 
     def update_nbody_params(self, params: dict):
-        for obj in self.scene.objects:
-            if isinstance(obj, NBody):
-                obj.uniforms.update(params)
-                ro = self.render_window.render_objects.get(obj)
-                if ro is not None:
-                    ro.compute_uniforms.update(params)
-                self.output_widget.write(f"N-Body parameters updated.")
-                return
-        self.output_widget.write("No N-Body Simulation in the scene.")
+        self._update_simulation_uniforms(NBody, "N-Body", params)
 
     def _remove_command(self, command_parts: list[str]):
         if len(command_parts) < 2:
@@ -393,6 +361,15 @@ class CommandHandler:
             return
 
         type_ = command_parts[1].lower()
+
+        if type_ == "lorenz":
+            self._remove_lorenz()
+            return
+
+        if type_ == "nbody":
+            self._remove_nbody()
+            return
+
         if type_ == "func":
             if len(command_parts) < 3:
                 self.output_widget.write_error(
@@ -409,11 +386,21 @@ class CommandHandler:
                     break
 
             if func_to_remove:
-                self.scene.objects.remove(func_to_remove)
+                self.scene.remove(func_to_remove)
                 self.update_function_editors_callback()
                 self.output_widget.write(f"Removed function: {value_string}")
             else:
-                self.output_widget.write(
-                    f"Function '{value_string}' not found in the scene."
-                )
+                self.output_widget.write(f"Function '{value_string}' not found in the scene.")
             return
+
+        self.output_widget.write_error(
+            f"Unknown remove type '{type_}'. Use 'lorenz', 'nbody', or 'func'."
+        )
+
+
+def _plane_for_camera(camera) -> str:
+    """Return the plane name ('xy'/'xz'/'yz') for a Camera2D, or 'xy' as a fallback."""
+    from .render_types import plane_for_snap_mode
+
+    plane = plane_for_snap_mode(getattr(camera, "snap_mode", None))
+    return plane or "xy"

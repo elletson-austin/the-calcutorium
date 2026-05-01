@@ -14,14 +14,14 @@ class OutputWidget(QTextEdit):
         """)
 
     def write(self, text: str, end: str = '\n'):
-        self.moveCursor(QTextCursor.End)
+        self.moveCursor(QTextCursor.MoveOperation.End)
         self.insertPlainText(text + end)
-        self.moveCursor(QTextCursor.End)
+        self.moveCursor(QTextCursor.MoveOperation.End)
 
     def write_error(self, text: str, end: str = '\n'):
-        self.moveCursor(QTextCursor.End)
+        self.moveCursor(QTextCursor.MoveOperation.End)
         self.setTextColor(QColor("#FF0000"))
         self.insertPlainText(text + end)
-        self.moveCursor(QTextCursor.End)
+        self.moveCursor(QTextCursor.MoveOperation.End)
         self.setTextColor(QColor("#F0F0F0"))
 

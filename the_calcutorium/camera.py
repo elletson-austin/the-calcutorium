@@ -53,14 +53,22 @@ class InputState:  # Tracks the state of the input
 class Camera3D:
     def __init__(
         self,
-        position_center: np.ndarray = np.array([0.0, 0.0, 0.0], dtype=np.float32),
-        rotation: np.ndarray = np.array([0.0, 45.0, 0.0], dtype=np.float32),
+        position_center: np.ndarray | None = None,
+        rotation: np.ndarray | None = None,
         distance: float = 50.0,
         fov: float = 60.0,
     ):
 
-        self.position_center = position_center
-        self.rotation = rotation
+        self.position_center = (
+            np.array([0.0, 0.0, 0.0], dtype=np.float32)
+            if position_center is None
+            else np.array(position_center, dtype=np.float32)
+        )
+        self.rotation = (
+            np.array([0.0, 45.0, 0.0], dtype=np.float32)
+            if rotation is None
+            else np.array(rotation, dtype=np.float32)
+        )
         self.distance = distance
         self.fov = fov
         self.projection = Projection.Perspective
@@ -149,18 +157,18 @@ class Camera3D:
 class Camera2D:
     def __init__(
         self,
-        position_center: np.ndarray = np.array((0, 0, 0), dtype=np.float32),
+        position_center: np.ndarray | None = None,
         distance: float = 50.0,
         snap_mode: SnapMode = SnapMode.XY,
     ):
         self.position_center = (
             np.array([0.0, 0.0, 0.0], dtype=np.float32)
             if position_center is None
-            else position_center
+            else np.array(position_center, dtype=np.float32)
         )
         self.distance = distance
         self.snap_mode = snap_mode
-        self.projection = Projection.Orthographic  # Always orthographic
+        self.projection = Projection.Orthographic
 
     def get_position(self) -> np.ndarray:
         pos = self.position_center.copy()
