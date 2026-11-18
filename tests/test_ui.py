@@ -108,12 +108,16 @@ def test_hover_readout(window, run):
     top_right = (slice(0, after.shape[0] // 8), slice(after.shape[1] // 2, None))
     assert (after[top_right] != before[top_right]).any(), "no readout box drawn"
 
+    # Nothing else differs between the two shots, so pixels that changed around the dot's
+    # spot were changed by the dot. (Counting curve-colored pixels doesn't work: at 1x
+    # scale the dot's dark outline covers about as many line pixels as the dot adds.)
+    scale = after.shape[1] / w  # physical pixels per logical pixel: 1, 1.5, 2, ...
     dot_x = round((4 - h0) / (h1 - h0) * after.shape[1])
     dot_y = round((v1 - 4) / (v1 - v0) * after.shape[0])
-    around = (slice(dot_y - 8, dot_y + 8), slice(dot_x - 8, dot_x + 8))
-    curve = window.app.scene.plots()[0]
-    extra = pixels_of(after[around], curve.color) - pixels_of(before[around], curve.color)
-    assert extra > 20, "no dot on the curve at the cursor"
+    r = round(8 * scale)
+    around = (slice(dot_y - r, dot_y + r), slice(dot_x - r, dot_x + r))
+    changed = int((after[around] != before[around]).any(axis=-1).sum())
+    assert changed > 20 * scale**2, f"no dot on the curve at the cursor ({changed} pixels changed)"
 
 
 def test_contour_in_3d(window, run):
