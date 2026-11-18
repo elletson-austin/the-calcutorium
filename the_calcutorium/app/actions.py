@@ -20,7 +20,7 @@ from ..mathcore import (
     simplify,
     to_string,
 )
-from ..scene import Color, Contour, Curve, LorenzAttractor, NBody, Plot, Scene, Surface, graph
+from ..scene import Color, Contour, Curve, LorenzAttractor, Plot, Scene, Surface, graph
 from .view import PLANES, ViewState
 
 PALETTE = [
@@ -32,8 +32,8 @@ PALETTE = [
     (0.30, 0.85, 0.85),  # cyan
 ]
 
-SIMULATIONS = {"lorenz": LorenzAttractor, "nbody": NBody}
-_SIMULATION_LABELS = {"lorenz": "Lorenz attractor", "nbody": "N-body simulation"}
+SIMULATIONS = {"lorenz": LorenzAttractor}
+_SIMULATION_LABELS = {"lorenz": "Lorenz attractor"}
 
 
 class App:

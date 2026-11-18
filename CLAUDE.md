@@ -2,6 +2,7 @@
 
 Personal math workbench (PySide6 + ModernGL + numpy) that grows with my math degree.
 **Read DESIGN.md first**: it has the vision, architecture, and rules. This file is the short version.
+Architecture changes follow ROADMAP.md, in order; tick its boxes as steps finish.
 
 ## Commands
 

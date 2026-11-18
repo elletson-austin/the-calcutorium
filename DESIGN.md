@@ -191,7 +191,7 @@ shell": the shell gathers inputs, calls the pure core, and applies the result.
   rounded point, so the numbers shown agree with each other.
 - Curves break cleanly at undefined points and asymptotes (tan, 1/x); surfaces are lit
   on both sides.
-- Lorenz attractor and N-body simulations on the GPU.
+- Lorenz attractor simulation on the GPU.
 
 ## History
 
@@ -213,7 +213,9 @@ render code. The rewrite fixed, among other things:
 
 ## Next up
 
-See Todos.md. Known architecture pain points, in the order to tackle them:
+See Todos.md for features. **ROADMAP.md is the step-by-step plan** that resolves the
+pain points below (and the open questions), in order, with "done when" checklists.
+Known architecture pain points:
 
 - The viewport's mesh-build callbacks also stash label data (`_grid_labels`, `_anchors`) as
   a side effect. Builders should return labels with the mesh; input handling should move
@@ -229,4 +231,5 @@ See Todos.md. Known architecture pain points, in the order to tackle them:
   input also accept `d/dx f` as shorthand for it?
 - ODE systems: evaluate on CPU with numpy (simple, any expression) or compile
   expressions to GLSL (fast, more complex)? Start CPU, revisit if slow.
-- Keep N-body at all? It's physics, not coursework.
+- ~~Keep N-body at all?~~ Removed 2026-11-18: physics, not coursework, and it needed
+  custom GPU compute code. It's in git history if ever wanted.

@@ -134,8 +134,8 @@ def test_simulation_lifecycle(app):
 
 
 def test_unknown_simulation_param(app):
-    app.add_simulation("nbody")
-    app.update_simulation("nbody", {"warp": 9})
+    app.add_simulation("lorenz")
+    app.update_simulation("lorenz", {"warp": 9})
     assert errors(app)
 
 
@@ -235,7 +235,7 @@ def test_simulation_commands(app):
 
 def test_clear_command(app):
     run_command(app, "x")
-    run_command(app, "add nbody")
+    run_command(app, "add lorenz")
     run_command(app, "clear")
     assert app.scene.objects == ()
 

@@ -18,7 +18,7 @@ from typing import Any, Callable, Hashable
 import moderngl
 import numpy as np
 
-from ..scene import LorenzAttractor, NBody
+from ..scene import LorenzAttractor
 from .meshes import Mesh
 from .simulations import GpuSimulation, create_simulation
 
@@ -99,7 +99,7 @@ class Renderer:
         set_uniform(program, "u_light_pos", np.array([20.0, 10.0, 40.0], dtype=np.float32))  # above (z-up)
         cached.vao.render(mode=cached.mode)
 
-    def draw_simulation(self, key: Hashable, sim: LorenzAttractor | NBody) -> None:
+    def draw_simulation(self, key: Hashable, sim: LorenzAttractor) -> None:
         self._drawn.add(key)
         gpu = self._simulations.get(key)
         if gpu is not None and not gpu.can_update_to(sim):

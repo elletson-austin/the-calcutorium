@@ -112,13 +112,6 @@ class SimulationsPanel(QWidget):
             "dt": _spin(0.001, 0.0001, 0.1, decimals=4),
             "steps": _int_spin(5, 1, 50),
         }))
-        layout.addWidget(self._group("nbody", "N-Body Simulation", {
-            "num_bodies": _int_spin(4000, 100, 50000),
-            "G": _spin(1.0, 0.01, 100.0),
-            "dt": _spin(0.01, 0.001, 1.0, decimals=3),
-            "softening": _spin(1.0, 0.01, 10.0),
-            "steps": _int_spin(5, 1, 50),
-        }))
         layout.addStretch(1)
 
     def _group(self, name: str, title: str, fields: dict) -> QGroupBox:

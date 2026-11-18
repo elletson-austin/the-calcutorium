@@ -1,6 +1,6 @@
 """GPU simulations: particles live in GPU buffers and a compute shader steps them each frame.
 
-The scene object (LorenzAttractor, NBody) holds the parameters; this module holds the
+The scene object (LorenzAttractor) holds the parameters; this module holds the
 running GPU state. Changing a parameter like rho just updates a uniform; changing the
 particle count or seed rebuilds the simulation from scratch.
 """
@@ -10,7 +10,7 @@ from pathlib import Path
 import moderngl
 import numpy as np
 
-from ..scene import LorenzAttractor, NBody
+from ..scene import LorenzAttractor
 
 SHADER_DIR = Path(__file__).parent / "shaders"
 LOCAL_SIZE = 256  # must match local_size_x in the .comp shaders
@@ -88,33 +88,7 @@ class GpuLorenz(GpuSimulation):
         return sim.num_points
 
 
-class GpuNBody(GpuSimulation):
-    params = ("G", "dt", "softening", "steps", "num_bodies")
-    structural = ("num_bodies", "seed")
-
-    def __init__(self, ctx: moderngl.Context, sim: NBody):
-        super().__init__(ctx, sim, "nbody.comp", "nbody.vert", "nbody.frag")
-        rng = np.random.default_rng(sim.seed)
-        n = self.count
-        pos = np.ones((n, 4), dtype=np.float32)
-        pos[:, :3] = rng.standard_normal((n, 3)) * 5.0
-        vel = np.zeros((n, 4), dtype=np.float32)
-        vel[:, :3] = rng.standard_normal((n, 3)) * 0.1
-        mass = np.abs(rng.standard_normal(n)).astype(np.float32)
-        positions = ctx.buffer(pos.tobytes())
-        self.buffers = [positions, ctx.buffer(vel.tobytes()), ctx.buffer(mass.tobytes())]
-        self.vao = ctx.vertex_array(self.program, [(positions, "4f", "in_position")])
-        _set(self.program, "u_model", np.eye(4, dtype=np.float32))
-        _set(self.program, "u_point_size", 5.0)
-        _set(self.program, "u_color", np.array([1.0, 1.0, 1.0], dtype=np.float32))
-
-    def _count(self, sim: NBody) -> int:
-        return sim.num_bodies
-
-
-def create_simulation(ctx: moderngl.Context, sim: LorenzAttractor | NBody) -> GpuSimulation:
+def create_simulation(ctx: moderngl.Context, sim: LorenzAttractor) -> GpuSimulation:
     if isinstance(sim, LorenzAttractor):
         return GpuLorenz(ctx, sim)
-    if isinstance(sim, NBody):
-        return GpuNBody(ctx, sim)
     raise TypeError(f"Not a simulation: {sim!r}")

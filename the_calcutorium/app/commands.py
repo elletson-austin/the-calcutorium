@@ -12,7 +12,7 @@ HELP = """Commands:
   remove <equation>        remove a plot (or: remove contour <eq>, remove lorenz)
   clear                    remove everything
   show <expression>        work out calculus: show diff(x^2*y, x)
-  add lorenz | nbody       start a simulation
+  add lorenz               start the Lorenz attractor
   view 3d | xy | xz | yz   switch views
   range <axis> <min> <max> fix an axis range in 2D (range auto to undo)
   help                     this message
@@ -78,7 +78,7 @@ def _remove(app: App, rest: str) -> None:
     elif rest:
         app.remove_plot_by_text(rest)
     else:
-        app.error("Usage: remove [curve|surface|contour] <equation>   or   remove lorenz | nbody")
+        app.error("Usage: remove [curve|surface|contour] <equation>   or   remove lorenz")
 
 
 def _clear(app: App, rest: str) -> None:

@@ -85,17 +85,7 @@ class LorenzAttractor:
     seed: int = 0           # starting points are random, but reproducible
 
 
-@dataclass(frozen=True, eq=False)
-class NBody:
-    num_bodies: int = 4000
-    G: float = 1.0
-    dt: float = 0.01
-    softening: float = 1.0
-    steps: int = 5
-    seed: int = 0
-
-
-SceneObject = Plot | LorenzAttractor | NBody
+SceneObject = Plot | LorenzAttractor
 
 
 class Scene:
