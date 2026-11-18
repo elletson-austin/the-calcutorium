@@ -10,11 +10,14 @@ uniform vec3 u_light_pos;
 uniform vec3 u_view_pos;
 
 void main() {
+    vec3 view_dir = normalize(u_view_pos - v_pos);
     vec3 norm = normalize(v_normal);
+    // Two-sided lighting: a surface has no "outside", so light whichever side we see.
+    if (dot(norm, view_dir) < 0.0) norm = -norm;
     vec3 light_dir = normalize(u_light_pos - v_pos);
     
     // Ambient
-    float ambient_strength = 0.2;
+    float ambient_strength = 0.3;
     vec3 ambient = ambient_strength * vec3(1.0, 1.0, 1.0);
     
     // Diffuse
@@ -23,7 +26,6 @@ void main() {
     
     // Specular
     float specular_strength = 0.4;
-    vec3 view_dir = normalize(u_view_pos - v_pos);
     vec3 reflect_dir = reflect(-light_dir, norm);
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
     vec3 specular = specular_strength * spec * vec3(1.0, 1.0, 1.0);
