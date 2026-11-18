@@ -5,9 +5,11 @@ and tested from plain Python.
 """
 
 from dataclasses import fields, replace
+from typing import Callable
 
 from ..events import Event
 from ..mathcore import (
+    Equation,
     MathError,
     Num,
     compile_expr,
@@ -18,7 +20,7 @@ from ..mathcore import (
     simplify,
     to_string,
 )
-from ..scene import LorenzAttractor, NBody, Plot, Scene
+from ..scene import Color, Contour, Curve, LorenzAttractor, NBody, Plot, Scene, Surface, graph
 from .view import PLANES, ViewState
 
 PALETTE = [
@@ -52,41 +54,57 @@ class App:
     # ---- plots ----------------------------------------------------------
 
     def add_plot(self, text: str) -> Plot | None:
-        if any(p.text == text.strip() for p in self.scene.plots()):
-            self.info(f"'{text.strip()}' is already plotted.")
-            return None
+        """Plot an equation the natural way: a curve (0–1 inputs) or a surface (2 inputs)."""
+        return self._add(text, graph)
+
+    def add_contour(self, text: str) -> Plot | None:
+        """Plot the level curves of a 2-input equation."""
+        return self._add(text, Contour)
+
+    def _add(self, text: str, make: Callable[[Equation, Color], Plot]) -> Plot | None:
         try:
-            equation = parse_equation(text)
+            plot = make(parse_equation(text), self._next_color())
         except MathError as e:
-            self.error(f"Can't plot '{text}': {e}")
+            self.error(f"Can't plot '{text.strip()}': {e}")
             return None
-        plot = Plot(equation, self._next_color())
+        if any(type(p) is type(plot) and p.text == plot.text for p in self.scene.plots()):
+            self.info(f"'{plot.text}' is already plotted as a {plot.kind}.")
+            return None
         self.scene.add(plot)
-        self.info(f"Plotted {plot.text}")
+        self.info(f"Plotted {plot.text} ({plot.kind})")
         return plot
 
     def edit_plot(self, plot: Plot, text: str) -> Plot | None:
-        """Replace a plot's equation. Returns the new plot, or None if the text is invalid."""
+        """Change a plot's equation. Returns the new plot, or None if the text is invalid.
+
+        A curve can become a surface and back (they're both "the graph"); a contour stays a contour.
+        """
         try:
             equation = parse_equation(text)
+            if isinstance(plot, (Curve, Surface)):
+                new_plot = replace(graph(equation, plot.color), domain=plot.domain)
+            else:
+                new_plot = replace(plot, equation=equation)
         except MathError as e:
-            self.error(f"Can't plot '{text}': {e}")
+            self.error(f"Can't plot '{text.strip()}': {e}")
             return None
-        new_plot = replace(plot, equation=equation)
         self.scene.replace(plot, new_plot)
         self.info(f"Changed {plot.text} → {new_plot.text}")
         return new_plot
 
     def remove_plot(self, plot: Plot) -> None:
         self.scene.remove(plot)
-        self.info(f"Removed {plot.text}")
+        self.info(f"Removed {plot.text} ({plot.kind})")
 
-    def remove_plot_by_text(self, text: str) -> None:
-        plot = next((p for p in self.scene.plots() if p.text == text.strip()), None)
-        if plot is None:
-            self.error(f"No plot '{text.strip()}'")
+    def remove_plot_by_text(self, text: str, kind: str | None = None) -> None:
+        matches = [p for p in self.scene.plots() if p.text == text.strip() and kind in (None, p.kind)]
+        if not matches:
+            self.error(f"No {kind or 'plot'} '{text.strip()}'")
+        elif len(matches) > 1:
+            kinds = " or ".join(f"'remove {p.kind} {p.text}'" for p in matches)
+            self.error(f"'{text.strip()}' is plotted more than one way. Use {kinds}.")
         else:
-            self.remove_plot(plot)
+            self.remove_plot(matches[0])
 
     def clear(self) -> None:
         for obj in self.scene.objects:

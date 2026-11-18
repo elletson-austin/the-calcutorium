@@ -18,3 +18,5 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["ui: opens a real window and needs a GPU (run with: pytest -m ui)"]
+addopts = "-m 'not ui'"

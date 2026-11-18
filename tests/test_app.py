@@ -1,7 +1,7 @@
 import pytest
 
 from the_calcutorium.app import App, run_command
-from the_calcutorium.scene import LorenzAttractor, Plot
+from the_calcutorium.scene import Contour, Curve, LorenzAttractor, Plot, Surface
 
 
 @pytest.fixture
@@ -19,7 +19,8 @@ def errors(app):
 def test_add_plot(app):
     plot = app.add_plot("z = x*y")
     assert app.scene.plots() == [plot]
-    assert plot.is_surface
+    assert isinstance(plot, Surface)
+    assert isinstance(app.add_plot("x^2"), Curve)
 
 
 def test_invalid_plot_reports_error_and_changes_nothing(app):
@@ -50,6 +51,43 @@ def test_bad_edit_keeps_the_old_plot(app):
     old = app.add_plot("x^2")
     assert app.edit_plot(old, "x^") is None
     assert app.scene.plots() == [old]
+
+
+def test_editing_a_curve_into_two_inputs_makes_a_surface(app):
+    curve = app.add_plot("x^2")
+    assert isinstance(app.edit_plot(curve, "x*y"), Surface)
+
+
+def test_add_contour(app):
+    c = app.add_contour("z = x^2 + y^2")
+    assert isinstance(c, Contour) and c.levels is None
+
+
+def test_contour_needs_two_inputs(app):
+    assert app.add_contour("y = x^2") is None
+    assert "needs 2" in errors(app)[-1]
+    assert app.scene.plots() == []
+
+
+def test_same_equation_as_surface_and_contour(app):
+    app.add_plot("x*y")
+    app.add_contour("x*y")
+    assert len(app.scene.plots()) == 2
+    app.add_contour("x*y")  # but not the same kind twice
+    assert len(app.scene.plots()) == 2
+
+
+def test_editing_a_contour_keeps_it_a_contour(app):
+    c = app.add_contour("x*y")
+    assert isinstance(app.edit_plot(c, "x^2 - y^2"), Contour)
+    assert app.edit_plot(app.scene.plots()[0], "x^2") is None  # 1 input: not a valid contour
+    assert isinstance(app.scene.plots()[0], Contour)
+
+
+def test_invalid_plot_cannot_be_constructed():
+    from the_calcutorium.mathcore import MathError, parse_equation
+    with pytest.raises(MathError):
+        Surface(parse_equation("x^2"), (1, 1, 1))
 
 
 def test_scene_events(app):
@@ -122,6 +160,20 @@ def test_remove_command(app):
     run_command(app, "x^2")
     run_command(app, "remove x^2")
     assert app.scene.plots() == []
+
+
+def test_contour_command(app):
+    run_command(app, "contour z = x^2 + y^2")
+    assert isinstance(app.scene.plots()[0], Contour)
+
+
+def test_remove_needs_a_kind_when_ambiguous(app):
+    run_command(app, "x*y")
+    run_command(app, "contour x*y")
+    run_command(app, "remove x*y")
+    assert "more than one way" in errors(app)[-1]
+    run_command(app, "remove contour x*y")
+    assert [type(p) for p in app.scene.plots()] == [Surface]
 
 
 def test_view_commands(app):

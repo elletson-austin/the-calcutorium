@@ -60,14 +60,14 @@ Both call the same `App` actions (see below). The output log shows the result of
 ┌─────────────────────────────────────────────────────────────┐
 │ scene.py   Pure data: WHAT is on screen, not HOW to draw it.│
 │            Scene (objects + added/removed/replaced events)  │
-│            Plot, LorenzAttractor, NBody (immutable)         │
+│            Curve, Surface, Contour (all Plots), simulations │
 └──────────────┬──────────────────────────────────────────────┘
                │ uses
                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ mathcore/  Pure functions + numpy. No Qt, no GL. Tested.    │
 │            tokenizer, parser, expr, calculus, compiler,     │
-│            equation, sampling                               │
+│            equation, sampling, contours, ticks              │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
@@ -91,11 +91,13 @@ Typing `z = x^2 + y^2` in the command bar:
 2. `app/commands` sees it isn't a command word → calls `app.add_plot("z = x^2 + y^2")`.
 3. `add_plot` calls `mathcore.parse_equation` → an `Equation` (output z, inputs x, y,
    plus a compiled numpy function).
-4. It wraps that in a `Plot` with a color and calls `scene.add(plot)`.
+4. It wraps that in a `Surface` (2 inputs; `scene.graph` picks Curve or Surface) with a
+   color and calls `scene.add(plot)`. `contour …` would make a `Contour` instead.
 5. The scene emits `added`. `ui/plot_list` adds an editable row; the log prints "Plotted …".
 6. Next frame, `ui/viewport` loops over `scene.plots()` and asks the renderer to draw each.
    The renderer has no GPU buffer for this plot yet, so it calls `render/meshes.plot_mesh`,
-   which calls `mathcore.sample_surface` and builds triangles, then uploads them.
+   which looks up the builder for `Surface` in `BUILDERS`. That calls
+   `mathcore.sample_surface` and builds triangles, which the renderer uploads.
 
 Clicking "Add" in the Plots panel enters at step 2 (`app.add_plot`): same code from there on.
 
@@ -140,8 +142,23 @@ shell": the shell gathers inputs, calls the pure core, and applies the result.
 
 ### Key rules
 
-- **Scene objects describe math, not GPU.** A `Plot` holds an `Equation` and a color.
-  It knows nothing about shaders or vertex layouts; `render/meshes.py` owns that.
+- **Scene objects describe math, not GPU.** A plot holds an `Equation`, a color, and a
+  domain. It knows nothing about shaders or vertex layouts; `render/meshes.py` owns that.
+- **Each kind of plot is its own class.** `Curve`, `Surface`, `Contour` all extend `Plot`
+  and hold only the fields they need (a `Contour` has `levels`). Each checks its equation
+  in `__post_init__`, so an invalid plot (a surface with one input) can't be built. The same
+  equation can be shown several ways at once: `z = x*y` as a Surface *and* a Contour.
+- **One builder per kind.** `render/meshes.py` maps each class to a function
+  `builder(plot, plane, h_range, v_range) -> Mesh | None` in the `BUILDERS` table.
+
+### Adding a kind of plot
+
+1. Math: any new pure function goes in `mathcore/` with tests (contours: `contours.py`).
+2. Scene: a `Plot` subclass in `scene.py` with its `kind`, allowed `inputs`, and fields.
+3. Render: a builder in `render/meshes.py`, registered in `BUILDERS`
+   (a test fails if you forget: `test_every_plot_kind_has_a_builder`).
+4. App: an `add_<kind>` action in `app/actions.py`, a command in `app/commands.py`, and an
+   entry in `PlotsPanel.ADD_ACTIONS` for the dropdown.
 - **Scene objects are immutable.** Editing a plot builds a new `Plot` and calls
   `scene.replace(old, new)`. That's why there's no "dirty" flag: a new object *is* the change.
 - **The scene announces changes** through `Event`s (`added`, `removed`, `replaced`).
@@ -156,6 +173,8 @@ shell": the shell gathers inputs, calls the pure core, and applies the result.
 
 - Curves (`y = x^2`, `x = y^2`, `z = sin(x)`) and surfaces (`z = x*y`, `x*y`), shown in 3D;
   curves also in the matching 2D plane, re-sampled to whatever range is visible.
+- Contours (`contour z = x^2 + y^2`): level curves by marching squares, with round-numbered
+  levels picked automatically. Flat in their 2D plane; in 3D each floats at its height.
 - Partial derivatives and integrals inside any expression; `show <expr>` prints the
   worked-out result (`show diff(x^2*y, x)` → `2*x*y`).
 - Command bar with history (↑/↓). Anything that isn't a command is plotted. `help` lists it all.
@@ -185,8 +204,15 @@ render code. The rewrite fixed, among other things:
 
 ## Next up
 
-Features, starting with multivariable calculus:
-contours/level curves, gradient fields, tangent planes, parametric curves (`t` as a parameter).
+See Todos.md. Known architecture pain points, in the order to tackle them:
+
+- The viewport's mesh-build callbacks also stash label data (`_grid_labels`, `_anchors`) as
+  a side effect. Builders should return labels with the mesh; input handling should move
+  out of the viewport.
+- Equations only allow x, y, z: no parameters (`t` for parametric curves, slider constants).
+- The 3D camera doesn't frame what's plotted, and a plot's domain can't be set from the UI.
+- Simulations bypass mathcore (equations hardcoded in GLSL). Resolve with general ODE systems.
+- The renderer sets lighting uniforms on every program; it redraws at 60 fps even when idle.
 
 ## Open questions
 

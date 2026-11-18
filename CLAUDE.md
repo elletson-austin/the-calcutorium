@@ -8,6 +8,9 @@ Personal math workbench (PySide6 + ModernGL + numpy) that grows with my math deg
 - Run the app: `uv run main.py`
 - Run tests: `uv run pytest`
 - Run one test file: `uv run pytest tests/test_calculus.py -q`
+- Run the UI tests (opens a window, checks pixels, saves screenshots to tests/output/):
+  `uv run pytest -m ui`. Run these after any change to `render/` or `ui/`, and look at the
+  screenshots: unit tests can't see a plot that silently fails to draw.
 
 ## Architecture (dependencies only point down)
 
@@ -41,5 +44,7 @@ planes.py, events.py: tiny shared helpers.
 - New math function: `mathcore/tokenizer.py` (FUNCTIONS), `compiler.py` (numpy impl),
   `calculus.py` (_DERIVATIVES), plus tests.
 - New command: handler in `app/commands.py` that calls an `App` method; add to HELP.
-- New kind of scene object: dataclass in `scene.py`, mesh builder in `render/meshes.py`,
-  drawn from `ui/viewport.py::_draw_scene`.
+- New kind of plot: follow "Adding a kind of plot" in DESIGN.md (Plot subclass in
+  `scene.py`, builder registered in `render/meshes.py::BUILDERS`, `add_<kind>` action,
+  command, and panel dropdown entry).
+- Never remove `glBindVertexArray(0)` in `ui/viewport.py`; `tests/test_ui.py` checks it.

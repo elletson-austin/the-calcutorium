@@ -7,7 +7,8 @@ from .actions import SIMULATIONS, App
 HELP = """Commands:
   plot <equation>          plot a curve or surface: plot z = sin(x)*cos(y)
   <equation>               anything that isn't a command is plotted: y = x^2
-  remove <equation>        remove a plot (or: remove lorenz, remove nbody)
+  contour <equation>       level curves f(x, y) = c: contour z = x^2 + y^2
+  remove <equation>        remove a plot (or: remove contour <eq>, remove lorenz)
   clear                    remove everything
   show <expression>        work out calculus: show diff(x^2*y, x)
   add lorenz | nbody       start a simulation
@@ -45,13 +46,26 @@ def _plot(app: App, rest: str) -> None:
         app.add_plot(rest)
 
 
+def _contour(app: App, rest: str) -> None:
+    if not rest:
+        app.error("Usage: contour <equation>")
+    else:
+        app.add_contour(rest)
+
+
+_PLOT_KINDS = ("curve", "surface", "contour")
+
+
 def _remove(app: App, rest: str) -> None:
+    first, _, after = rest.partition(" ")
     if rest.lower() in SIMULATIONS:
         app.remove_simulation(rest.lower())
+    elif first.lower() in _PLOT_KINDS and after.strip():
+        app.remove_plot_by_text(after, kind=first.lower())
     elif rest:
         app.remove_plot_by_text(rest)
     else:
-        app.error("Usage: remove <equation> | lorenz | nbody")
+        app.error("Usage: remove [curve|surface|contour] <equation>   or   remove lorenz | nbody")
 
 
 def _clear(app: App, rest: str) -> None:
@@ -100,6 +114,7 @@ def _range(app: App, rest: str) -> None:
 _COMMANDS: dict[str, Callable[[App, str], None]] = {
     "help": _help,
     "plot": _plot,
+    "contour": _contour,
     "remove": _remove,
     "clear": _clear,
     "show": _show,

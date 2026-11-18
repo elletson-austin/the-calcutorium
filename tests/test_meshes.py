@@ -3,19 +3,23 @@ import pytest
 
 from the_calcutorium.mathcore import parse_equation
 from the_calcutorium.render.camera import Camera2D
-from the_calcutorium.render.meshes import grid_mesh, nice_spacing, plot_mesh
-from the_calcutorium.scene import Plot
+from the_calcutorium.render.meshes import BUILDERS, grid_mesh, plot_mesh
+from the_calcutorium.scene import Contour, Plot, graph
 
 RED = (1.0, 0.0, 0.0)
 
 
 def plot(text: str) -> Plot:
-    return Plot(parse_equation(text), RED)
+    return graph(parse_equation(text), RED)
 
 
-@pytest.mark.parametrize("span, expected", [(20, 2), (100, 10), (7, 0.5), (0.3, 0.02), (50, 5)])
-def test_nice_spacing(span, expected):
-    assert nice_spacing(span) == pytest.approx(expected)
+def contour(text: str, levels=None) -> Contour:
+    return Contour(parse_equation(text), RED, levels=levels)
+
+
+def test_every_plot_kind_has_a_builder():
+    kinds = {cls for cls in Plot.__subclasses__()}
+    assert kinds == set(BUILDERS)
 
 
 def test_grid_labels_are_major_lines_only():
@@ -91,6 +95,30 @@ def test_surface_mesh():
 
 def test_surfaces_are_hidden_in_2d():
     assert plot_mesh(plot("z = x*y"), "xy", (-1, 1), (-1, 1)) is None
+
+
+def test_contour_in_3d_floats_at_each_level():
+    mesh = plot_mesh(contour("z = x^2 + y^2", levels=(4.0, 9.0)))
+    z = mesh.data[:, 2]
+    assert set(np.round(z, 6)) == {4.0, 9.0}
+    r = np.linalg.norm(mesh.data[:, :2], axis=1)
+    np.testing.assert_allclose(r, np.sqrt(z), atol=0.1)
+
+
+def test_contour_in_its_plane_is_flat_and_uses_visible_range():
+    mesh = plot_mesh(contour("z = x^2 + y^2", levels=(1.0,)), "xy", (-2, 2), (-2, 2))
+    np.testing.assert_allclose(mesh.data[:, 2], 0.0)
+    r = np.linalg.norm(mesh.data[:, :2], axis=1)
+    np.testing.assert_allclose(r, 1.0, atol=0.01)  # finer grid in a small range → tighter circle
+
+
+def test_contour_is_hidden_in_other_planes():
+    assert plot_mesh(contour("z = x*y"), "xz", (-1, 1), (-1, 1)) is None
+
+
+def test_contour_auto_levels():
+    mesh = plot_mesh(contour("z = x^2 + y^2"))
+    assert len(set(np.round(mesh.data[:, 2], 6))) >= 5
 
 
 @pytest.mark.parametrize("plane", ["xy", "xz", "yz"])

@@ -2,6 +2,7 @@
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QGridLayout,
     QGroupBox,
@@ -57,6 +58,9 @@ def _int_spin(value: int, lo: int, hi: int) -> QSpinBox:
 
 
 class PlotsPanel(QWidget):
+    # dropdown label → App method that adds that kind
+    ADD_ACTIONS = {"graph": App.add_plot, "contour": App.add_contour}
+
     def __init__(self, app: App, parent=None):
         super().__init__(parent)
         self.app = app
@@ -69,10 +73,14 @@ class PlotsPanel(QWidget):
         self.input = QLineEdit()
         self.input.setPlaceholderText("e.g. z = sin(x)*cos(y)")
         self.input.returnPressed.connect(self._add)
+        self.kind = QComboBox()
+        self.kind.addItems(list(self.ADD_ACTIONS))
+        self.kind.setToolTip("graph: a curve or surface, whichever fits the equation")
         add_button = QPushButton("Add")
         add_button.setFixedWidth(50)
         add_button.clicked.connect(self._add)
-        add_row.addWidget(self.input)
+        add_row.addWidget(self.input, 1)
+        add_row.addWidget(self.kind)
         add_row.addWidget(add_button)
         layout.addLayout(add_row)
 
@@ -84,7 +92,8 @@ class PlotsPanel(QWidget):
 
     def _add(self) -> None:
         text = self.input.text().strip()
-        if text and self.app.add_plot(text) is not None:
+        add = self.ADD_ACTIONS[self.kind.currentText()]
+        if text and add(self.app, text) is not None:
             self.input.clear()
 
 

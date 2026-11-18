@@ -10,16 +10,16 @@ Vertex layouts per program:
 """
 
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
-from ..mathcore import sample_curve, sample_surface
+from ..mathcore import nice_spacing, sample_contours, sample_curve, sample_surface
 from ..planes import AXES, AXIS_INDEX, PLANE_AXES
-from ..scene import Plot
+from ..scene import Contour, Curve, Plot, Surface
 
 Range = tuple[float, float]
 
-DEFAULT_DOMAIN: Range = (-10.0, 10.0)  # what curves/surfaces span in 3D
 CURVE_SAMPLES = 500
 SURFACE_SAMPLES = 100
 
@@ -43,16 +43,6 @@ def axes_mesh(length: float = 10.0) -> Mesh:
             pos[i] = sign * length
             rows.append(np.concatenate([pos, color]))
     return Mesh("basic", "lines", np.array(rows, dtype=np.float32))
-
-
-def nice_spacing(span: float, target_lines: int = 10) -> float:
-    """A grid spacing of 1, 2 or 5 × 10^k giving about `target_lines` lines across `span`."""
-    raw = span / target_lines
-    power = 10 ** np.floor(np.log10(raw))
-    for step, below in ((1, 1.5), (2, 3.5), (5, 7.5)):
-        if raw / power < below:
-            return float(step * power)
-    return float(10 * power)
 
 
 @dataclass(frozen=True)
@@ -90,24 +80,16 @@ def grid_mesh(plane: str, h_range: Range, v_range: Range, major_every: int = 5) 
 
 
 # ---- plots ----------------------------------------------------------------------
+# Every builder has the same signature:
+#     builder(plot, plane, h_range, v_range) -> Mesh | None
+# plane is None in 3D (then the plot's own domain is used), or "xy"/"xz"/"yz" in 2D
+# (then h_range/v_range are the visible ranges). None means "nothing to draw here".
 
-def plot_mesh(plot: Plot, plane: str | None = None,
-              h_range: Range = DEFAULT_DOMAIN, v_range: Range = DEFAULT_DOMAIN) -> Mesh | None:
-    """The mesh for a plot in 3D (plane=None) or in a 2D plane's visible ranges.
-
-    Returns None when there's nothing to draw (e.g. a surface in 2D, or a curve that
-    doesn't lie in the plane).
-    """
-    if plot.is_surface:
-        return surface_mesh(plot) if plane is None else None
-    return curve_mesh(plot, plane, h_range, v_range)
-
-
-def curve_mesh(plot: Plot, plane: str | None, h_range: Range, v_range: Range) -> Mesh | None:
+def curve_mesh(plot: Curve, plane: str | None, h_range: Range, v_range: Range) -> Mesh | None:
     eq = plot.equation
     if plane is None:
         input_axis = eq.inputs[0] if eq.inputs else _first_axis_except(eq.output)
-        domain, out_span = DEFAULT_DOMAIN, DEFAULT_DOMAIN[1] - DEFAULT_DOMAIN[0]
+        domain, out_span = plot.domain, plot.domain[1] - plot.domain[0]
     else:
         h_axis, v_axis, _ = PLANE_AXES[plane]
         if eq.output not in (h_axis, v_axis):
@@ -122,10 +104,7 @@ def curve_mesh(plot: Plot, plane: str | None, h_range: Range, v_range: Range) ->
     # Sample twice as finely: even samples are segment endpoints, odd ones their midpoints.
     fine = sample_curve(eq, domain, 2 * CURVE_SAMPLES - 1, along=input_axis)
     segments = _curve_segments(fine[::2], fine[1::2], AXIS_INDEX[eq.output], out_span)
-    if len(segments) == 0:
-        return None
-    colors = np.broadcast_to(plot.color, (len(segments), 3))
-    return Mesh("basic", "lines", np.hstack([segments, colors]).astype(np.float32))
+    return _lines(segments, plot.color)
 
 
 def _first_axis_except(axis: str) -> str:
@@ -151,8 +130,10 @@ def _curve_segments(points: np.ndarray, midpoints: np.ndarray, out_index: int, o
     return np.stack([a[keep], b[keep]], axis=1).reshape(-1, 3)
 
 
-def surface_mesh(plot: Plot, domain: Range = DEFAULT_DOMAIN, n: int = SURFACE_SAMPLES) -> Mesh | None:
-    grid = sample_surface(plot.equation, domain, domain, n)  # (n, n, 3)
+def surface_mesh(plot: Surface, plane: str | None, h_range: Range, v_range: Range) -> Mesh | None:
+    if plane is not None:
+        return None  # a surface has no flat picture; use a Contour for that
+    grid = sample_surface(plot.equation, plot.domain, plot.domain, SURFACE_SAMPLES)  # (n, n, 3)
 
     # Each grid cell becomes two triangles: (p1, p3, p2) and (p2, p3, p4)
     p1, p2 = grid[:-1, :-1], grid[:-1, 1:]
@@ -175,3 +156,48 @@ def _face_normals(triangles: np.ndarray) -> np.ndarray:
     n = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
     length = np.linalg.norm(n, axis=1, keepdims=True)
     return n / np.where(length > 1e-12, length, 1.0)
+
+
+def contour_mesh(plot: Contour, plane: str | None, h_range: Range, v_range: Range) -> Mesh | None:
+    """Level curves. In 3D each one floats at its height c; in the 2D plane of the
+    equation's inputs (xy for z = f(x, y)) they're drawn flat, like a topographic map."""
+    eq = plot.equation
+    if plane is None:
+        ranges = (plot.domain, plot.domain)
+    else:
+        h_axis, v_axis, _ = PLANE_AXES[plane]
+        if set(eq.inputs) != {h_axis, v_axis}:
+            return None
+        visible = {h_axis: h_range, v_axis: v_range}
+        ranges = (visible[eq.inputs[0]], visible[eq.inputs[1]])
+
+    lines = sample_contours(eq, *ranges, levels=plot.levels)
+    if not lines:
+        return None
+    segments = np.concatenate([s for _, s in lines]).reshape(-1, 3)
+    if plane is not None:
+        segments[:, AXIS_INDEX[eq.output]] = 0.0  # flatten into the plane
+    return _lines(segments, plot.color)
+
+
+def _lines(vertices: np.ndarray, color) -> Mesh | None:
+    """A "basic" line mesh: vertex pairs, all one color."""
+    if len(vertices) == 0:
+        return None
+    colors = np.broadcast_to(color, (len(vertices), 3))
+    return Mesh("basic", "lines", np.hstack([vertices, colors]).astype(np.float32))
+
+
+# To add a kind of plot: write its builder above and register it here.
+BUILDERS: dict[type[Plot], Callable[[Plot, str | None, Range, Range], Mesh | None]] = {
+    Curve: curve_mesh,
+    Surface: surface_mesh,
+    Contour: contour_mesh,
+}
+
+
+def plot_mesh(plot: Plot, plane: str | None = None,
+              h_range: Range | None = None, v_range: Range | None = None) -> Mesh | None:
+    """The mesh for any plot, in 3D (plane=None) or in a 2D plane's visible ranges."""
+    return BUILDERS[type(plot)](plot, plane, h_range, v_range)
+

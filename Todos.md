@@ -3,7 +3,9 @@
 One task per session. Check DESIGN.md before starting.
 
 ## Multivariable calculus (this semester)
-- [ ] Contour / level curves of a surface: `contour z = x^2 + y^2`
+- [x] Contour / level curves of a surface: `contour z = x^2 + y^2`
+- [ ] Contours: label each level with its value; choose levels from the panel
+- [ ] 3D camera frames what's plotted; set a plot's domain (`contour z = x^2+y^2` is mostly off-screen now)
 - [ ] Gradient vector field: arrows of ∇f on a grid
 - [ ] Tangent plane to a surface at a point
 - [ ] Parametric curves with `t`: `(cos(t), sin(t), t/4)`

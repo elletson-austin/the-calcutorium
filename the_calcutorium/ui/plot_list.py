@@ -23,6 +23,10 @@ class PlotRow(QWidget):
         self.swatch = QLabel()
         self.swatch.setFixedSize(10, 10)
 
+        self.kind = QLabel()
+        self.kind.setFixedWidth(52)
+        self.kind.setStyleSheet("color: #888888; font-size: 10px;")
+
         self.edit = QLineEdit(plot.text)
         self.edit.returnPressed.connect(self._commit)
         self.edit.editingFinished.connect(self._commit)
@@ -37,12 +41,14 @@ class PlotRow(QWidget):
         remove.clicked.connect(lambda: self.app.remove_plot(self.plot))
 
         row.addWidget(self.swatch)
+        row.addWidget(self.kind)
         row.addWidget(self.edit, 1)
         row.addWidget(remove)
         self.show_plot(plot)
 
     def show_plot(self, plot: Plot) -> None:
         self.plot = plot
+        self.kind.setText(plot.kind)  # can change: editing a curve into x*y makes a surface
         self.edit.setText(plot.text)
         r, g, b = (int(c * 255) for c in plot.color)
         self.swatch.setStyleSheet(f"background-color: rgb({r},{g},{b}); border-radius: 5px;")
