@@ -14,7 +14,7 @@ from typing import Callable
 
 import numpy as np
 
-from ..mathcore import nice_spacing, sample_contours, sample_curve, sample_surface
+from ..mathcore import Equation, nice_spacing, sample_contours, sample_curve, sample_surface
 from ..planes import AXES, AXIS_INDEX, PLANE_AXES
 from ..scene import Contour, Curve, Plot, Surface
 
@@ -91,12 +91,10 @@ def curve_mesh(plot: Curve, plane: str | None, h_range: Range, v_range: Range) -
         input_axis = eq.inputs[0] if eq.inputs else _first_axis_except(eq.output)
         domain, out_span = plot.domain, plot.domain[1] - plot.domain[0]
     else:
-        h_axis, v_axis, _ = PLANE_AXES[plane]
-        if eq.output not in (h_axis, v_axis):
+        input_axis = curve_axis_in_plane(eq, plane)
+        if input_axis is None:
             return None
-        input_axis = v_axis if eq.output == h_axis else h_axis
-        if eq.inputs and eq.inputs[0] != input_axis:
-            return None
+        h_axis = PLANE_AXES[plane][0]
         domain = h_range if input_axis == h_axis else v_range
         out_range = v_range if input_axis == h_axis else h_range
         out_span = out_range[1] - out_range[0]
@@ -105,6 +103,21 @@ def curve_mesh(plot: Curve, plane: str | None, h_range: Range, v_range: Range) -
     fine = sample_curve(eq, domain, 2 * CURVE_SAMPLES - 1, along=input_axis)
     segments = _curve_segments(fine[::2], fine[1::2], AXIS_INDEX[eq.output], out_span)
     return _lines(segments, plot.color)
+
+
+def curve_axis_in_plane(eq: Equation, plane: str) -> str | None:
+    """The in-plane axis a curve runs along, or None if the curve isn't in this plane.
+
+    y = x^2 in xy runs along x; x = y^2 runs along y; y = 3 runs along the other
+    in-plane axis; z = x isn't in xy at all.
+    """
+    h_axis, v_axis, _ = PLANE_AXES[plane]
+    if eq.output not in (h_axis, v_axis):
+        return None
+    input_axis = v_axis if eq.output == h_axis else h_axis
+    if eq.inputs and eq.inputs[0] != input_axis:
+        return None
+    return input_axis
 
 
 def _first_axis_except(axis: str) -> str:

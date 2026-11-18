@@ -42,6 +42,7 @@ def window():
 def run(window):
     """Clear the scene, then return a function that types commands into the window."""
     window.app.clear()
+    window.app.auto_range()
     window.app.set_view("3d")
 
     def type_commands(*lines: str):
@@ -89,6 +90,30 @@ def test_every_plot_is_drawn_in_2d(window, run):
 def test_xz_view(window, run):
     run("view xz", "z = 3x^2", "x = z^2/4")
     assert_all_plots_visible(window, screenshot(window, "2d_xz"))
+
+
+def test_hover_readout(window, run):
+    run("view xy", "y = x^2/4", "contour z = x^2 + y^2")
+    viewport = window.viewport
+    w, h = viewport.width(), viewport.height()
+    (h0, h1), (v0, v1) = viewport.camera.visible_ranges(w, h)
+    viewport.hovering = False  # the real mouse may happen to be over the window
+    before = screenshot(window, "hover_off")
+
+    viewport.hovering = True  # what moving the mouse in does
+    viewport.input.mouse_pos[:] = ((4 - h0) / (h1 - h0) * w, h / 2)  # at x = 4: the dot is at (4, 4)
+    after = screenshot(window, "hover_readout")
+
+    # Screenshots are in physical pixels (w, h above are logical), so scale by the image's size
+    top_right = (slice(0, after.shape[0] // 8), slice(after.shape[1] // 2, None))
+    assert (after[top_right] != before[top_right]).any(), "no readout box drawn"
+
+    dot_x = round((4 - h0) / (h1 - h0) * after.shape[1])
+    dot_y = round((v1 - 4) / (v1 - v0) * after.shape[0])
+    around = (slice(dot_y - 8, dot_y + 8), slice(dot_x - 8, dot_x + 8))
+    curve = window.app.scene.plots()[0]
+    extra = pixels_of(after[around], curve.color) - pixels_of(before[around], curve.color)
+    assert extra > 20, "no dot on the curve at the cursor"
 
 
 def test_contour_in_3d(window, run):

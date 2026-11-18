@@ -18,7 +18,7 @@ Personal math workbench (PySide6 + ModernGL + numpy) that grows with my math deg
 ui/        Qt widgets. Calls App actions, listens to events.     (Qt, GL via render/)
 app/       App: every user action. commands.py: text → actions.   (no Qt)
 scene.py   Immutable scene objects + change events.              (no Qt)
-render/    meshes.py: scene → vertex arrays (pure numpy).
+render/    meshes.py: scene → vertex arrays (pure numpy). readout.py: scene + cursor → hover text (pure).
            renderer.py, simulations.py: the only GPU code.
 mathcore/  Pure functions: parse, diff, simplify, compile, sample. (numpy only)
 planes.py, events.py: tiny shared helpers.

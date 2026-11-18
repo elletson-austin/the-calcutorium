@@ -5,7 +5,7 @@ or zoomed", which clears manual ranges.
 
 Controls:
     3D: left-drag orbits, scroll zooms, WASD moves, Tab toggles perspective/orthographic
-    2D: left-drag pans, scroll zooms
+    2D: left-drag pans, scroll zooms, hovering shows the values under the cursor
 """
 
 from dataclasses import dataclass, field
@@ -19,6 +19,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from ..app import App, ViewState
 from ..render.camera import Camera2D, Camera3D
 from ..render.meshes import GridLabels, Mesh, axes_mesh, grid_mesh, plot_mesh
+from ..render.readout import ReadoutLine, plane_point, readout
 from ..render.renderer import Renderer
 from ..scene import Plot
 from .overlay import draw_overlay
@@ -112,7 +113,16 @@ class Viewport(QOpenGLWidget):
 
         if ranges is not None:
             labels = [(p.text, p.color, a) for p, a in self._anchors.items() if a is not None]
-            draw_overlay(self, view.mode, *ranges, self._grid_labels, labels)
+            lines = self._readout(view.mode, ranges) if self.hovering else ()
+            draw_overlay(self, view.mode, *ranges, self._grid_labels, labels, lines)
+
+    def _readout(self, plane: str, ranges) -> tuple[ReadoutLine, ...]:
+        """Mouse pixel → plane point → readout lines (all the work is in render/readout.py)."""
+        (h_range, v_range), size = ranges, (self.width(), self.height())
+        mouse = (float(self.input.mouse_pos[0]), float(self.input.mouse_pos[1]))
+        point = plane_point(mouse, size, h_range, v_range)
+        step = min((h_range[1] - h_range[0]) / size[0], (v_range[1] - v_range[0]) / size[1])
+        return readout(self.app.scene.plots(), plane, point, step)
 
     def _draw_scene(self, view: ViewState, ranges) -> None:
         r = self.renderer

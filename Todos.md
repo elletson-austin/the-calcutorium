@@ -19,5 +19,6 @@ One task per session. Check DESIGN.md before starting.
 - [ ] Sequences and series: partial sums, convergence
 
 ## Polish
+- [x] 2D hover readout: cursor coordinates, curve values (with a dot), f(x, y) of surfaces/contours
 - [ ] Hide/show toggle per plot
 - [ ] Save/load a scene to a file

@@ -73,6 +73,7 @@ Both call the same `App` actions (see below). The output log shows the result of
 ┌─────────────────────────────────────────────────────────────┐
 │ render/    Reads the scene, never changes it.               │
 │            meshes.py    scene → vertex arrays (pure numpy)  │
+│            readout.py   scene + cursor → hover text (pure)  │
 │            camera.py    view/projection matrices            │
 │            renderer.py, simulations.py  the only GPU code   │
 └─────────────────────────────────────────────────────────────┘
@@ -184,6 +185,10 @@ shell": the shell gathers inputs, calls the pure core, and applies the result.
 - Command bar with history (↑/↓). Anything that isn't a command is plotted. `help` lists it all.
 - Views: 3D with z up, like a calculus textbook (orbit, zoom, WASD, Tab =
   perspective/orthographic); 2D xy/xz/yz (pan, zoom, grid with labels, manual ranges).
+- 2D hover readout: the cursor's coordinates, each curve's value there (with a dot on the
+  curve), and each surface/contour's f at the cursor. `render/readout.py` is pure: the
+  cursor is rounded to what one pixel can resolve, and every value is computed at that
+  rounded point, so the numbers shown agree with each other.
 - Curves break cleanly at undefined points and asymptotes (tan, 1/x); surfaces are lit
   on both sides.
 - Lorenz attractor and N-body simulations on the GPU.

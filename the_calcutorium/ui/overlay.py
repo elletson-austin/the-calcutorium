@@ -1,14 +1,15 @@
-"""Text drawn over the 2D view: grid numbers, axis names, and plot labels.
+"""Text drawn over the 2D view: grid numbers, axis names, plot labels, and the hover readout.
 
 Drawn with QPainter after OpenGL finishes each frame.
 """
 
-from PySide6.QtCore import QRect, Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from ..planes import AXIS_INDEX, PLANE_AXES
 from ..render.meshes import GridLabels
+from ..render.readout import ReadoutLine
 
 Range = tuple[float, float]
 
@@ -25,8 +26,10 @@ def draw_overlay(
     v_range: Range,
     grid: GridLabels,
     plot_labels: list[tuple[str, tuple[float, float, float], tuple[float, float, float]]],
+    readout_lines: tuple[ReadoutLine, ...] = (),
 ) -> None:
-    """plot_labels: (text, rgb color 0..1, world-space anchor point) per plot."""
+    """plot_labels: (text, rgb color 0..1, world-space anchor point) per plot.
+    readout_lines: the hover readout (render/readout.py); empty when the mouse is elsewhere."""
     width, height = widget.width(), widget.height()
     if width == 0 or height == 0:
         return
@@ -64,4 +67,31 @@ def draw_overlay(
         painter.setPen(QColor.fromRgbF(*color))
         painter.drawText(QRect(x - 150, y - 24, 150, 20), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
 
+    if readout_lines:
+        _draw_readout(painter, width, readout_lines, to_screen)
     painter.end()
+
+
+def _draw_readout(painter: QPainter, width: int, lines: tuple[ReadoutLine, ...], to_screen) -> None:
+    """A box of lines in the top-right corner, plus a dot on each curve at the cursor."""
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    for line in lines:
+        if line.marker is not None:
+            x, y = to_screen(*line.marker)
+            painter.setPen(QPen(QColor(20, 20, 20), 1.5))
+            painter.setBrush(QColor.fromRgbF(*line.color))
+            painter.drawEllipse(QPoint(x, y), 4, 4)
+
+    painter.setFont(QFont("Consolas", 10))
+    metrics = QFontMetrics(painter.font())
+    pad, row = 8, metrics.height()
+    box_w = max(metrics.horizontalAdvance(line.text) for line in lines) + 2 * pad
+    box = QRect(width - box_w - 10, 10, box_w, row * len(lines) + 2 * pad)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(0, 0, 0, 170))
+    painter.drawRoundedRect(box, 4, 4)
+
+    for i, line in enumerate(lines):
+        painter.setPen(QColor.fromRgbF(*line.color) if line.color else QColor(220, 220, 220))
+        painter.drawText(QRect(box.left() + pad, box.top() + pad + i * row, box_w, row),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line.text)
