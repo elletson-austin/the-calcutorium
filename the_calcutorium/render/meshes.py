@@ -171,7 +171,7 @@ def contour_mesh(plot: Contour, plane: str | None, h_range: Range, v_range: Rang
         visible = {h_axis: h_range, v_axis: v_range}
         ranges = (visible[eq.inputs[0]], visible[eq.inputs[1]])
 
-    lines = sample_contours(eq, *ranges, levels=plot.levels)
+    lines = sample_contours(eq, *ranges, interval=plot.interval)
     if not lines:
         return None
     segments = np.concatenate([s for _, s in lines]).reshape(-1, 3)

@@ -13,8 +13,8 @@ def plot(text: str) -> Plot:
     return graph(parse_equation(text), RED)
 
 
-def contour(text: str, levels=None) -> Contour:
-    return Contour(parse_equation(text), RED, levels=levels)
+def contour(text: str, interval=None) -> Contour:
+    return Contour(parse_equation(text), RED, interval=interval)
 
 
 def test_every_plot_kind_has_a_builder():
@@ -98,18 +98,22 @@ def test_surfaces_are_hidden_in_2d():
 
 
 def test_contour_in_3d_floats_at_each_level():
-    mesh = plot_mesh(contour("z = x^2 + y^2", levels=(4.0, 9.0)))
+    mesh = plot_mesh(contour("z = x^2 + y^2", interval=25))  # values 0..200 over ±10
     z = mesh.data[:, 2]
-    assert set(np.round(z, 6)) == {4.0, 9.0}
-    r = np.linalg.norm(mesh.data[:, :2], axis=1)
-    np.testing.assert_allclose(r, np.sqrt(z), atol=0.1)
+    assert set(np.round(z, 6)) == {25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0}
+    full_circles = z <= 100
+    r = np.linalg.norm(mesh.data[full_circles, :2], axis=1)
+    np.testing.assert_allclose(r, np.sqrt(z[full_circles]), atol=0.1)
 
 
 def test_contour_in_its_plane_is_flat_and_uses_visible_range():
-    mesh = plot_mesh(contour("z = x^2 + y^2", levels=(1.0,)), "xy", (-2, 2), (-2, 2))
+    mesh = plot_mesh(contour("z = x^2 + y^2", interval=1), "xy", (-1.2, 1.2), (-1.2, 1.2))
     np.testing.assert_allclose(mesh.data[:, 2], 0.0)
     r = np.linalg.norm(mesh.data[:, :2], axis=1)
-    np.testing.assert_allclose(r, 1.0, atol=0.01)  # finer grid in a small range → tighter circle
+    # values reach 2.88 in this range, so levels 1 and 2: circles of radius 1 and √2
+    nearest = np.where(np.abs(r - 1) < np.abs(r - np.sqrt(2)), 1.0, np.sqrt(2))
+    np.testing.assert_allclose(r, nearest, atol=0.01)  # finer grid in a small range → tight circles
+    assert (np.abs(r - 1) < 0.01).sum() > 100
 
 
 def test_contour_is_hidden_in_other_planes():

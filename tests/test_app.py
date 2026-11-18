@@ -60,7 +60,29 @@ def test_editing_a_curve_into_two_inputs_makes_a_surface(app):
 
 def test_add_contour(app):
     c = app.add_contour("z = x^2 + y^2")
-    assert isinstance(c, Contour) and c.levels is None
+    assert isinstance(c, Contour) and c.interval is None
+
+
+def test_set_contour_interval(app):
+    c = app.add_contour("x*y")
+    c = app.set_contour_interval(c, 5)
+    assert app.scene.plots() == [c] and c.interval == 5
+    c = app.set_contour_interval(c, None)
+    assert c.interval is None
+
+
+@pytest.mark.parametrize("bad", [0, -1, float("nan")])
+def test_contour_interval_must_be_positive(app, bad):
+    c = app.add_contour("x*y")
+    assert app.set_contour_interval(c, bad) is None
+    assert "positive" in errors(app)[-1]
+    assert app.scene.plots()[0].interval is None
+
+
+def test_contour_again_changes_the_interval(app):
+    app.add_contour("x*y")
+    app.add_contour("x*y", 2)
+    assert [p.interval for p in app.scene.plots()] == [2]
 
 
 def test_contour_needs_two_inputs(app):
@@ -165,6 +187,17 @@ def test_remove_command(app):
 def test_contour_command(app):
     run_command(app, "contour z = x^2 + y^2")
     assert isinstance(app.scene.plots()[0], Contour)
+
+
+def test_contour_every_command(app):
+    run_command(app, "contour z = x^2 + y^2 every 5")
+    assert app.scene.plots()[0].interval == 5
+    run_command(app, "contour z = x^2 + y^2 every 0.5")
+    assert app.scene.plots()[0].interval == 0.5
+    run_command(app, "contour z = x^2 + y^2 every auto")
+    assert app.scene.plots()[0].interval is None
+    run_command(app, "contour z = x^2 + y^2 every lots")
+    assert "isn't a number" in errors(app)[-1]
 
 
 def test_remove_needs_a_kind_when_ambiguous(app):

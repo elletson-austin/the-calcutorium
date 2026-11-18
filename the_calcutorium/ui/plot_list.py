@@ -4,10 +4,18 @@ It listens to scene events, so it stays in sync no matter whether a plot was
 added from the panel, the command bar, or anywhere else.
 """
 
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QDoubleSpinBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..app import App
-from ..scene import Plot
+from ..scene import Contour, Plot
 
 
 class PlotRow(QWidget):
@@ -16,9 +24,12 @@ class PlotRow(QWidget):
         self.app = app
         self.plot = plot
 
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
+        rows = QVBoxLayout(self)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(2)
+        row = QHBoxLayout()
         row.setSpacing(5)
+        rows.addLayout(row)
 
         self.swatch = QLabel()
         self.swatch.setFixedSize(10, 10)
@@ -44,6 +55,24 @@ class PlotRow(QWidget):
         row.addWidget(self.kind)
         row.addWidget(self.edit, 1)
         row.addWidget(remove)
+
+        # Contour settings, on a second line (only shown for contours)
+        self.interval = QDoubleSpinBox()
+        self.interval.setRange(0, 1e6)       # 0 is shown as "auto"
+        self.interval.setDecimals(3)
+        self.interval.setSingleStep(1)
+        self.interval.setSpecialValueText("auto")
+        self.interval.setKeyboardTracking(False)  # apply on Enter / arrows, not every keystroke
+        self.interval.setToolTip("Draw a level curve at every multiple of this (0 = auto)")
+        self.interval.valueChanged.connect(self._set_interval)
+        self.contour_settings = QWidget()
+        settings = QHBoxLayout(self.contour_settings)
+        settings.setContentsMargins(67, 0, 29, 0)  # line up under the equation box
+        every = QLabel("every")
+        settings.addWidget(every)
+        settings.addWidget(self.interval, 1)
+        rows.addWidget(self.contour_settings)
+
         self.show_plot(plot)
 
     def show_plot(self, plot: Plot) -> None:
@@ -52,6 +81,16 @@ class PlotRow(QWidget):
         self.edit.setText(plot.text)
         r, g, b = (int(c * 255) for c in plot.color)
         self.swatch.setStyleSheet(f"background-color: rgb({r},{g},{b}); border-radius: 5px;")
+
+        self.contour_settings.setVisible(isinstance(plot, Contour))
+        if isinstance(plot, Contour):
+            self.interval.blockSignals(True)  # showing the value isn't the user changing it
+            self.interval.setValue(plot.interval or 0)
+            self.interval.blockSignals(False)
+
+    def _set_interval(self, value: float) -> None:
+        if self.app.set_contour_interval(self.plot, value or None) is None:
+            self.show_plot(self.plot)  # rejected: show the current value again
 
     def _commit(self) -> None:
         text = self.edit.text().strip()

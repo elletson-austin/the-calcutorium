@@ -57,9 +57,28 @@ class App:
         """Plot an equation the natural way: a curve (0–1 inputs) or a surface (2 inputs)."""
         return self._add(text, graph)
 
-    def add_contour(self, text: str) -> Plot | None:
-        """Plot the level curves of a 2-input equation."""
-        return self._add(text, Contour)
+    def add_contour(self, text: str, interval: float | None = None) -> Plot | None:
+        """Plot the level curves of a 2-input equation, one every `interval` (None = automatic).
+
+        If that equation already has a contour, just change its interval.
+        """
+        existing = next((p for p in self.scene.plots()
+                         if isinstance(p, Contour) and p.text == text.strip()), None)
+        if existing is not None:
+            return self.set_contour_interval(existing, interval)
+        return self._add(text, lambda eq, color: Contour(eq, color, interval=interval))
+
+    def set_contour_interval(self, plot: Contour, interval: float | None) -> Contour | None:
+        if interval == plot.interval:
+            return plot
+        try:
+            new_plot = replace(plot, interval=interval)
+        except MathError as e:
+            self.error(str(e))
+            return None
+        self.scene.replace(plot, new_plot)
+        self.info(f"Contours of {plot.text}: every {'auto' if interval is None else f'{interval:g}'}")
+        return new_plot
 
     def _add(self, text: str, make: Callable[[Equation, Color], Plot]) -> Plot | None:
         try:

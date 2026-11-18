@@ -148,6 +148,8 @@ shell": the shell gathers inputs, calls the pure core, and applies the result.
   and hold only the fields they need (a `Contour` has `levels`). Each checks its equation
   in `__post_init__`, so an invalid plot (a surface with one input) can't be built. The same
   equation can be shown several ways at once: `z = x*y` as a Surface *and* a Contour.
+  Settings are fields too (`Contour.interval`), changed by an action that builds a new
+  plot (`set_contour_interval`), so the scene events keep the UI in sync automatically.
 - **One builder per kind.** `render/meshes.py` maps each class to a function
   `builder(plot, plane, h_range, v_range) -> Mesh | None` in the `BUILDERS` table.
 
@@ -173,8 +175,10 @@ shell": the shell gathers inputs, calls the pure core, and applies the result.
 
 - Curves (`y = x^2`, `x = y^2`, `z = sin(x)`) and surfaces (`z = x*y`, `x*y`), shown in 3D;
   curves also in the matching 2D plane, re-sampled to whatever range is visible.
-- Contours (`contour z = x^2 + y^2`): level curves by marching squares, with round-numbered
-  levels picked automatically. Flat in their 2D plane; in 3D each floats at its height.
+- Contours (`contour z = x^2 + y^2 every 5`): level curves by marching squares at every
+  multiple of an interval you set (the "every" box on the plot's row; 0 = auto, ~10 round-
+  numbered levels). Multiples stay put when you pan. More than 50 lines in view and it
+  draws every k-th multiple instead. Flat in their 2D plane; in 3D each floats at its height.
 - Partial derivatives and integrals inside any expression; `show <expr>` prints the
   worked-out result (`show diff(x^2*y, x)` → `2*x*y`).
 - Command bar with history (↑/↓). Anything that isn't a command is plotted. `help` lists it all.

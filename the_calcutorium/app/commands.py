@@ -8,6 +8,7 @@ HELP = """Commands:
   plot <equation>          plot a curve or surface: plot z = sin(x)*cos(y)
   <equation>               anything that isn't a command is plotted: y = x^2
   contour <equation>       level curves f(x, y) = c: contour z = x^2 + y^2
+  contour <eq> every 5     one level curve every 5 (every auto: let it choose)
   remove <equation>        remove a plot (or: remove contour <eq>, remove lorenz)
   clear                    remove everything
   show <expression>        work out calculus: show diff(x^2*y, x)
@@ -47,10 +48,22 @@ def _plot(app: App, rest: str) -> None:
 
 
 def _contour(app: App, rest: str) -> None:
-    if not rest:
-        app.error("Usage: contour <equation>")
+    """contour <equation> [every <interval|auto>]"""
+    equation, every, interval_text = rest.rpartition(" every ")
+    if not every:
+        equation, interval_text = rest, "auto"
+    if not equation.strip():
+        app.error("Usage: contour <equation> [every <number>]")
+        return
+    if interval_text.strip().lower() == "auto":
+        interval = None
     else:
-        app.add_contour(rest)
+        try:
+            interval = float(interval_text)
+        except ValueError:
+            app.error(f"'{interval_text.strip()}' isn't a number. Usage: contour <equation> every 5")
+            return
+    app.add_contour(equation, interval)
 
 
 _PLOT_KINDS = ("curve", "surface", "contour")

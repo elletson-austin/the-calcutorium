@@ -102,6 +102,35 @@ def test_surface_and_contour_together(window, run):
     assert pixels.std() > 10  # something was drawn (lit surfaces don't keep their exact color)
 
 
+def contour_row(window):
+    from the_calcutorium.ui.plot_list import PlotList
+    plot_list = window.findChild(PlotList)
+    (row,) = plot_list.rows.values()
+    return row
+
+
+def test_contour_interval_box(window, run):
+    run("view xy", "contour z = x^2 + y^2")
+    row = contour_row(window)
+    assert row.contour_settings.isVisibleTo(row) and row.interval.text() == "auto"
+
+    row.interval.setValue(50)  # what typing 50 + Enter does
+    (plot,) = window.app.scene.plots()
+    assert plot.interval == 50
+    assert_all_plots_visible(window, screenshot(window, "contour_every_50"))
+
+    run("contour z = x^2 + y^2 every 200")  # a typed command updates the box too
+    assert contour_row(window).interval.value() == 200
+
+    contour_row(window).interval.setValue(0)
+    assert window.app.scene.plots()[0].interval is None
+
+
+def test_curve_rows_have_no_interval_box(window, run):
+    run("y = x^2")
+    assert not contour_row(window).contour_settings.isVisibleTo(contour_row(window))
+
+
 def test_tab_and_ranges_dont_crash(window, run):
     run("view xy", "range x 0 10", "range y -2 8", "y = sin(x)", "range auto", "view 3d")
     screenshot(window, "after_ranges")

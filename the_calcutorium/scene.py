@@ -61,7 +61,12 @@ class Contour(Plot):
     kind: ClassVar[str] = "contour"
     inputs: ClassVar[tuple[int, ...]] = (2,)
 
-    levels: tuple[float, ...] | None = None  # None: pick round-numbered levels automatically
+    interval: float | None = None  # draw f = c at every multiple of this; None = automatic
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.interval is not None and not self.interval > 0:
+            raise MathError(f"The contour interval must be positive, not {self.interval:g}")
 
 
 def graph(equation: Equation, color: Color) -> Curve | Surface:
